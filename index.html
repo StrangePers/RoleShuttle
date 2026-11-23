@@ -1,0 +1,135 @@
+<!doctype html>
+<!--
+MIT License
+
+Copyright (c) 2026 StrangePers
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RoleShuttle · Delegation walkthrough</title>
+<style>
+:root{color-scheme:light;--paper:#f7f4ec;--ink:#202c29;--muted:#52605a;--line:#c9c9b9;--green:#245944;--clay:#833d2e}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.55 system-ui,sans-serif}main,header,footer{width:min(1160px,90%);margin:auto}header,footer{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:22px 0;border-bottom:1px solid var(--line)}header strong{font:600 25px Georgia,serif}a{color:var(--green);text-underline-offset:4px}main{padding:clamp(40px,6vw,90px) 0}.spread{display:grid;grid-template-columns:0.86fr 1.14fr;gap:clamp(28px,5vw,80px);align-items:center}h1,h2,h3,p{margin:0}h1{font:normal clamp(54px,6.8vw,92px)/.98 Georgia,serif;letter-spacing:-.055em;max-width:8.5em}h2{font:normal clamp(27px,3.5vw,42px)/1.07 Georgia,serif;letter-spacing:-.035em}h3{font-size:17px}.intro{max-width:33em;color:var(--muted);margin:24px 0}.note{font-size:14px;color:var(--muted)}.folder{position:relative;min-width:0;background:#fffdf7;border:1px solid var(--line);border-top:5px solid var(--green);padding:clamp(18px,3vw,32px);box-shadow:5px 6px 0 #e4e2d7}.mark{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:20px}.mark strong{font-size:15px;color:var(--green)}code,pre,.rev{font:14px/1.6 Consolas,monospace}.rev{color:var(--muted)}.file{margin-top:21px;border:1px solid var(--line);background:white}.file code{display:block;padding:5px 9px;background:#e9e9de;color:#414c47}.file pre{margin:0;padding:10px 9px;overflow:auto}.del{color:var(--clay)}.add{color:var(--green)}.result{border-left:3px solid var(--green);padding:1px 0 1px 12px;margin:22px 0 16px}.result[data-stale=true]{border-color:var(--clay)}button{font:600 15px system-ui,sans-serif;background:var(--green);color:white;border:1px solid transparent;border-radius:3px;padding:11px 15px;cursor:pointer}button.secondary{color:var(--green);background:transparent;border-color:var(--line)}:focus-visible{outline:3px solid #975519;outline-offset:4px}.actions{display:flex;gap:8px;flex-wrap:wrap}.details{display:grid;grid-template-columns:1fr 1fr 1fr;gap:32px;margin-top:clamp(48px,7vw,100px);border-top:1px solid var(--line);padding-top:24px}.details p{margin-top:6px;font-size:15px;color:var(--muted)}footer{border-top:1px solid var(--line);border-bottom:0;font-size:14px;color:var(--muted)}[hidden]{display:none!important}@media(max-width:780px){.spread,.details{grid-template-columns:1fr}.details{gap:18px}.intro{margin:16px 0}.folder{margin-top:8px}header{padding:15px 0}footer{align-items:start}.spread{gap:24px}}
+h1{font-size:clamp(52px,5.7vw,82px);max-width:10em}.stage-list{display:grid;gap:8px;padding-left:24px;margin:18px 0}.stage-list li{padding-left:4px;color:var(--muted)}.stage-list li[aria-current="step"]{color:var(--green);font-weight:700}.folder h2{font-size:clamp(27px,3vw,38px)}#route{font:14px/1.5 Consolas,monospace;color:var(--green);margin:12px 0}.details{scroll-margin-top:20px}
+.model-guide{display:grid;grid-template-columns:minmax(0,.86fr) minmax(0,1.14fr);gap:clamp(28px,5vw,80px);margin-top:clamp(48px,7vw,100px);padding-top:28px;border-top:1px solid var(--line);scroll-margin-top:1rem}
+.model-guide h2{max-width:14em}.model-guide p{margin-top:12px;max-width:60ch}.model-guide .note{margin-top:16px}
+.role-list details{border-bottom:1px solid var(--line)}.role-list summary{cursor:pointer;padding:12px 4px;color:var(--green)}.role-list summary span{margin-left:.7em;color:var(--muted);font-size:.85em}.role-body{padding:0 12px 15px 20px}.role-body p{font-size:15px}.role-body dl{display:grid;grid-template-columns:auto 1fr;gap:3px 16px;font-size:15px}.role-body dt{font-weight:650}.role-body dd{margin:0}
+@media(max-width:780px){.model-guide{grid-template-columns:1fr;gap:18px}}
+.trial{margin-top:clamp(48px,7vw,100px);border-top:1px solid var(--line);padding-top:24px;scroll-margin-top:20px}.trial p{max-width:76ch;margin:14px 0}.trial-scroll{max-width:100%;overflow-x:auto;margin:18px 0}.trial table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}.trial caption{text-align:left;color:var(--muted);padding-bottom:6px}.trial td,.trial th{text-align:right;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}.trial th:first-child{text-align:left}.trial summary{cursor:pointer;color:var(--green)}.importer{grid-template-columns:repeat(2,minmax(0,1fr))}@media(max-width:780px){.importer{grid-template-columns:1fr}}
+.handoff-steps{list-style:none;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1.5rem;margin:24px 0;padding:0}
+.handoff-steps li{border-top:2px solid var(--green);padding-top:12px}
+.handoff-steps p{margin:6px 0;color:var(--muted)}
+@media(max-width:780px){.handoff-steps{grid-template-columns:1fr;gap:12px}}
+</style></head>
+<body><header><strong>RoleShuttle</strong><a href="#measurement">Subscription trial</a></header>
+<main><div class="spread"><section><h1>Choose your chat model. Call a specialist when it counts.</h1>
+<p class="intro">Use a lightweight model for conversation. Choose a specialist for difficult decisions and a reviewer to check the proposal. Your main agent brings the result and any questions back to this chat.</p>
+<p><a href="#verified-handoff">See a free chat delegate to Luna and Astra</a></p>
+<p><a href="#model-guide">Find a model for each role</a></p>
+<p class="note">In this example, you decide which records a CSV export should include.</p></section>
+<section class="folder" aria-labelledby="task"><div class="mark"><strong>Interactive walkthrough</strong><span class="rev" id="count"></span></div><h2 id="task">Add CSV export to an orders app</h2>
+<ol class="stage-list" id="trail" aria-label="Task progress"></ol>
+<div class="result" aria-live="polite"><p id="route"></p><h3 id="state"></h3><p id="explain"></p></div>
+<div class="actions"><button id="next"></button><button id="alternate" class="secondary" hidden>All matching orders</button><button id="reset" class="secondary" hidden>Start over</button></div></section></div>
+<section id="verified-handoff" class="trial" aria-labelledby="handoff-title">
+<h2 id="handoff-title">One chat, two Codex workers, seven passing checks</h2>
+<p>On a clean Ubuntu installation, a free DeepSeek Flash chat in OpenCode took on a broken export. It sent the relevant code to Luna and kept the edits and tests in the original chat.</p>
+<ol class="handoff-steps">
+  <li><h3>Luna proposed the fix</h3><p>Filter to the selected orders and use the CSV writer for customer names. Keep the semicolon delimiter.</p><small>Codex implementation · low effort · 9.06 s</small></li>
+  <li><h3>Astra reviewed Luna’s answer</h3><p>Given the requirements and Luna’s actual proposal, Astra checked what an empty selection would emit and how an embedded newline would survive export. It accepted the change.</p><small>Codex review · medium effort · 14.09 s</small></li>
+  <li><h3>OpenCode applied and tested it</h3><p>The chat edited only <code>options.json</code> and ran the project test. A separate run then passed all seven CSV cases.</p><small>75 s from the first chat event to the last</small></li>
+</ol>
+<details><summary>Reproduce this handoff</summary>
+<p>Follow the <a href="https://github.com/StrangePers/RoleShuttle/blob/v0.1.0a14/docs/codex-stage.md#try-the-order-export">Codex handoff guide</a>. Sign in to Codex, open the orders example in your coding agent and send the request under “Try the order export.”</p>
+<p>The chat used <code>opencode/deepseek-v4.1-flash-free</code>. RoleShuttle called <code>gpt-6-luna</code> for implementation and <code>gpt-6.2-astra</code> for review through the Codex subscription. These timings cover one live run. Setup and the independent CSV check took place outside the 75-second chat.</p>
+</details></section>
+<section id="model-guide" class="model-guide" aria-labelledby="guide-title">
+<div><h2 id="guide-title">Which model fits each role?</h2>
+<p>Start with the least expensive model in your plan that can complete the role’s check. The main chat can stay on a lightweight, tool-capable model while another worker handles a difficult stage.</p><p class="note">These are RoleShuttle’s suggested starting points. Check which models your plan and executor offer. Codex entries follow the packaged preset. Kimi entries marked Go refer to the Go preset. For other plans, confirm the exact model and tool support in your executor.</p>
+<p class="note">Provider guides · <a href="https://platform.claude.com/docs/en/docs/about-claude/models/choosing-a-model">Claude models</a> · <a href="https://geminicli.com/docs/cli/model/">Gemini models</a> · <a href="https://www.kimi.com/en/help/new-user-guide/agentic-chat">Kimi models</a> · <a href="https://www.alibabacloud.com/help/en/model-studio/qwen-code">Qwen plans</a></p></div>
+<div class="role-list">
+<details name="worker-role" open><summary><strong>Assistant</strong><span>Fast</span></summary>
+<div class="role-body"><p>Find the export settings and cite the file and field that control selection.</p><dl><dt>Claude</dt><dd>Claude Haiku</dd><dt>Gemini</dt><dd>Gemini Flash</dd><dt>Codex</dt><dd>Luna · low</dd><dt>Kimi</dt><dd>K2.6 for quick lookups</dd><dt>Qwen</dt><dd>Flash</dd></dl><p>If the answer has no source, ask for the missing evidence before passing it on.</p></div></details>
+<details name="worker-role"><summary><strong>Coordinator</strong><span>Fast with reliable tools</span></summary>
+<div class="role-body"><p>Turn the request into a bounded edit and a separate check. Keep questions in the main chat.</p><dl><dt>Claude</dt><dd>Claude Haiku</dd><dt>Gemini</dt><dd>Gemini Flash</dd><dt>Codex</dt><dd>Sol 6.2 · low</dd><dt>Kimi</dt><dd>K3 with tool support</dd><dt>Qwen</dt><dd>Plus with tool support</dd></dl><p>Try one handoff. Move up if the model loses a constraint, cannot call the worker or fails to collect its result.</p></div></details>
+<details name="worker-role"><summary><strong>Implementer</strong><span>Coding</span></summary>
+<div class="role-body"><p>Change the exporter and add a test for a quoted customer name. Run that test on the patch.</p><dl><dt>Claude</dt><dd>Claude Sonnet</dd><dt>Gemini</dt><dd>Gemini Flash for a small patch</dd><dt>Codex</dt><dd>Sol 6.2 · medium</dd><dt>Kimi</dt><dd>K2.7 Code (Go preset)</dd><dt>Qwen</dt><dd>Plus</dd></dl><p>A fast model can handle a two-setting edit with a clear test. Use stronger reasoning when a change crosses modules or a check keeps failing.</p></div></details>
+<details name="worker-role"><summary><strong>Specialist</strong><span>Targeted reasoning</span></summary>
+<div class="role-body"><p>Trace a rounding discrepancy to the first incorrect calculation and produce a minimal failing input.</p><dl><dt>Claude</dt><dd>Claude Sonnet</dd><dt>Gemini</dt><dd>Gemini Pro</dd><dt>Codex</dt><dd>Sol 6.2 · high</dd><dt>Kimi</dt><dd>K3</dd><dt>Qwen</dt><dd>Plus, then Max for unresolved cases</dd></dl><p>Escalate if the evidence fits two explanations and the model cannot design a check to distinguish them.</p></div></details>
+<details name="worker-role"><summary><strong>Architect</strong><span>Deep reasoning</span></summary>
+<div class="role-body"><p>Compare two designs against the same constraints. Explain migration, failure recovery and the cost of reversing the decision.</p><dl><dt>Claude</dt><dd>Claude Opus</dd><dt>Gemini</dt><dd>Gemini Pro</dd><dt>Codex</dt><dd>Astra 6.2 · medium</dd><dt>Kimi</dt><dd>K3.1 Pro (Go architecture lane)</dd><dt>Qwen</dt><dd>Max</dd></dl><p>Reserve this stage for choices that affect several components or are expensive to undo.</p></div></details>
+<details name="worker-role"><summary><strong>Reviewer</strong><span>Independent reasoning</span></summary>
+<div class="role-body"><p>Give a fresh worker the requirements, patch and test results. Ask for an input that would break the change.</p><dl><dt>Claude</dt><dd>Claude Sonnet for routine review, Opus for critical changes</dd><dt>Gemini</dt><dd>Gemini Flash for routine review, Pro for critical changes</dd><dt>Codex</dt><dd>Astra 6.2 · medium</dd><dt>Kimi</dt><dd>K3.1 Pro (Go reviewer)</dd><dt>Qwen</dt><dd>Plus for routine review, Max for critical changes</dd></dl><p>For money, permissions or data loss, choose strong reasoning and reproduce consequential findings before acceptance.</p></div></details>
+</div></section>
+<section id="measurement" class="trial" aria-labelledby="trial-title">
+<h2 id="trial-title">One CSV fix, three routes</h2>
+<p>All nine submissions passed the same seven checks. Luna alone cost 98.9% less than Astra alone at Standard API rates. Astra approved Luna’s proposal every time review was requested.</p>
+<div class="trial-scroll" role="region" aria-label="Route measurements" tabindex="0">
+<table><caption>Mean per accepted fix · 3 attempts per route</caption>
+<thead><tr><th scope="col">Route</th><th scope="col">Input tokens</th><th scope="col">Output tokens</th><th scope="col">Elapsed</th><th scope="col">API equivalent</th></tr></thead>
+<tbody>
+<tr><th scope="row">Luna alone</th><td>19,315</td><td>32</td><td>7.93 s</td><td>$0.001948</td></tr>
+<tr><th scope="row">Astra alone</th><td>21,316</td><td>32</td><td>8.77 s</td><td>$0.171808</td></tr>
+<tr><th scope="row">Luna + Astra review</th><td>40,912</td><td>133.7</td><td>17.99 s</td><td>$0.178790</td></tr>
+</tbody></table></div>
+<details><summary>How we measured</summary><p>On November 23, 2026 each implementer received the same requirements and settings in a fresh Codex subscription thread. We rotated the order across three rounds. Time includes the native calls and the final CSV check. A script handled the handoff. The twelve calls reported zero cached or cache-write tokens. Dollar figures use <a href="https://developers.openai.com/api/docs/pricing">Standard API token prices</a>. In the source checkout, run <code>python -I -B examples/csv-routes/summary.py</code> to reproduce the estimates offline.</p></details>
+</section><section class="details importer" aria-label="Separate importer experiment"><div><h3>When the tests missed a cent</h3><p>On a two-supplier import, Luna passed the original 21 checks. Astra found a rounding error during review and returned an exact calculation.</p></div><div><h3>The cost of the whole fix</h3><p>The reviewed importer came to $0.2104 with Luna and Astra, versus $0.2186 with Astra alone. The routed workers took 181 seconds in total versus 92 seconds solo.</p></div></section></main>
+<footer><span>RoleShuttle · MIT · © 2026 StrangePers</span><span><a href="https://github.com/StrangePers/RoleShuttle">Repository</a> · <a href="https://github.com/StrangePers/RoleShuttle/releases/tag/v0.1.0a14">Download preview</a> · <a href="https://github.com/StrangePers/agentwhisker">AgentWhisker</a> · <a href="https://github.com/StrangePers/project-fieldnotes">Project Fieldnotes</a></span></footer>
+<script>
+const el = id => document.getElementById(id);
+let step = 0;
+let scope = '';
+function stages() {
+  return [
+    ['Plan','You → main agent','“Add CSV export to orders.”','Your main agent sets the scope and sends a read-only search to a local model.','Follow the search'],
+    ['Locate code','Local search worker → main agent','Two export points found.','The worker returns file references and one unresolved question. A short handoff keeps the file-reading trace out of the main conversation.','Read the question'],
+    ['Clarify scope','Main agent → you','Which orders should the export include?','The code supports two plausible choices. Your main agent asks once and attaches your answer to the implementation task.','Selected orders only'],
+    ['Implement','Main agent → lower-cost coding worker → main agent','Export scope: '+scope+'.','The worker returns a scoped patch and a test for that selection. The main agent sends the change for independent review.','Inspect the review'],
+    ['Review','Independent strong reviewer → main agent','A quoted customer name breaks the CSV.','The reviewer returns a failing example. The main agent asks the coding worker for a focused correction.','Follow the correction'],
+    ['Fix and verify','Coding worker → project checks → reviewer','Quoted names now round-trip.','The fix includes a regression test. The reviewer checks the updated patch. The main agent collects the evidence for this revision.','See the final answer'],
+    ['Report','Main agent → you','CSV export is ready for review.','Scope: '+scope+'. Selection and quoted-name checks passed in this example. The main agent returns the reviewed patch and test evidence.','Replay walkthrough']
+  ];
+}
+function render() {
+  const data = stages();
+  const [,route,title,description,action] = data[step];
+  const trail = data.slice(0,step+1).map(([name],i) => {
+    const item = document.createElement('li'); item.textContent = name;
+    if (i === step) item.setAttribute('aria-current','step');
+    return item;
+  });
+  el('trail').replaceChildren(...trail);
+  el('count').textContent = (step+1)+' / '+data.length;
+  el('route').textContent = route; el('state').textContent = title; el('explain').textContent = description;
+  el('next').textContent = action; el('alternate').hidden = step !== 2; el('reset').hidden = step === 0 || step === data.length-1;
+}
+function advance(choice) {
+  if (step === 2) scope = choice;
+  if (step === stages().length-1) {step=0; scope='';} else step++;
+  render(); el('next').focus();
+}
+el('next').addEventListener('click',()=>advance('selected orders only'));
+el('alternate').addEventListener('click',()=>advance('all matching orders'));
+el('reset').addEventListener('click',()=>{step=0;scope='';render();el('next').focus();});
+render();
+</script></body></html>
