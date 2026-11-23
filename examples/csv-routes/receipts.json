@@ -1,0 +1,284 @@
+[
+  {
+    "round": 1,
+    "position": 1,
+    "route": "luna",
+    "calls": [
+      {
+        "role": "implementer",
+        "model": "gpt-6-luna",
+        "wall_s": 7.8646,
+        "effort": "low",
+        "usage": {
+          "inputTokens": 19315,
+          "cachedInputTokens": 0,
+          "outputTokens": 32,
+          "cacheWriteInputTokens": 0
+        }
+      }
+    ],
+    "accepted": true,
+    "gate_passed": true,
+    "wall_s": 8.0444,
+    "settings": {
+      "scope": "selected",
+      "encoding": "csv",
+      "delimiter": ";"
+    }
+  },
+  {
+    "round": 1,
+    "position": 2,
+    "route": "astra",
+    "calls": [
+      {
+        "role": "implementer",
+        "model": "gpt-6.2-astra",
+        "wall_s": 9.4619,
+        "effort": "medium",
+        "usage": {
+          "inputTokens": 21316,
+          "cachedInputTokens": 0,
+          "outputTokens": 32,
+          "cacheWriteInputTokens": 0
+        }
+      }
+    ],
+    "accepted": true,
+    "gate_passed": true,
+    "wall_s": 9.6445,
+    "settings": {
+      "scope": "selected",
+      "encoding": "csv",
+      "delimiter": ";"
+    }
+  },
+  {
+    "round": 1,
+    "position": 3,
+    "route": "reviewed",
+    "calls": [
+      {
+        "role": "implementer",
+        "model": "gpt-6-luna",
+        "wall_s": 7.3204,
+        "effort": "low",
+        "usage": {
+          "inputTokens": 19315,
+          "cachedInputTokens": 0,
+          "outputTokens": 32,
+          "cacheWriteInputTokens": 0
+        }
+      },
+      {
+        "role": "reviewer",
+        "model": "gpt-6.2-astra",
+        "wall_s": 11.7543,
+        "effort": "medium",
+        "usage": {
+          "inputTokens": 21597,
+          "cachedInputTokens": 0,
+          "outputTokens": 118,
+          "cacheWriteInputTokens": 0
+        }
+      }
+    ],
+    "accepted": true,
+    "gate_passed": true,
+    "wall_s": 19.2355,
+    "settings": {
+      "scope": "selected",
+      "encoding": "csv",
+      "delimiter": ";"
+    },
+    "review_verdict": "ACCEPT"
+  },
+  {
+    "round": 2,
+    "position": 1,
+    "route": "astra",
+    "calls": [
+      {
+        "role": "implementer",
+        "model": "gpt-6.2-astra",
+        "wall_s": 8.7169,
+        "effort": "medium",
+        "usage": {
+          "inputTokens": 21316,
+          "cachedInputTokens": 0,
+          "outputTokens": 32,
+          "cacheWriteInputTokens": 0
+        }
+      }
+    ],
+    "accepted": true,
+    "gate_passed": true,
+    "wall_s": 8.8781,
+    "settings": {
+      "scope": "selected",
+      "encoding": "csv",
+      "delimiter": ";"
+    }
+  },
+  {
+    "round": 2,
+    "position": 2,
+    "route": "reviewed",
+    "calls": [
+      {
+        "role": "implementer",
+        "model": "gpt-6-luna",
+        "wall_s": 6.9565,
+        "effort": "low",
+        "usage": {
+          "inputTokens": 19315,
+          "cachedInputTokens": 0,
+          "outputTokens": 32,
+          "cacheWriteInputTokens": 0
+        }
+      },
+      {
+        "role": "reviewer",
+        "model": "gpt-6.2-astra",
+        "wall_s": 10.3865,
+        "effort": "medium",
+        "usage": {
+          "inputTokens": 21597,
+          "cachedInputTokens": 0,
+          "outputTokens": 88,
+          "cacheWriteInputTokens": 0
+        }
+      }
+    ],
+    "accepted": true,
+    "gate_passed": true,
+    "wall_s": 17.5017,
+    "settings": {
+      "scope": "selected",
+      "encoding": "csv",
+      "delimiter": ";"
+    },
+    "review_verdict": "ACCEPT"
+  },
+  {
+    "round": 2,
+    "position": 3,
+    "route": "luna",
+    "calls": [
+      {
+        "role": "implementer",
+        "model": "gpt-6-luna",
+        "wall_s": 6.8822,
+        "effort": "low",
+        "usage": {
+          "inputTokens": 19315,
+          "cachedInputTokens": 0,
+          "outputTokens": 32,
+          "cacheWriteInputTokens": 0
+        }
+      }
+    ],
+    "accepted": true,
+    "gate_passed": true,
+    "wall_s": 7.0464,
+    "settings": {
+      "scope": "selected",
+      "encoding": "csv",
+      "delimiter": ";"
+    }
+  },
+  {
+    "round": 3,
+    "position": 1,
+    "route": "reviewed",
+    "calls": [
+      {
+        "role": "implementer",
+        "model": "gpt-6-luna",
+        "wall_s": 7.4004,
+        "effort": "low",
+        "usage": {
+          "inputTokens": 19315,
+          "cachedInputTokens": 0,
+          "outputTokens": 32,
+          "cacheWriteInputTokens": 0
+        }
+      },
+      {
+        "role": "reviewer",
+        "model": "gpt-6.2-astra",
+        "wall_s": 9.6684,
+        "effort": "medium",
+        "usage": {
+          "inputTokens": 21597,
+          "cachedInputTokens": 0,
+          "outputTokens": 99,
+          "cacheWriteInputTokens": 0
+        }
+      }
+    ],
+    "accepted": true,
+    "gate_passed": true,
+    "wall_s": 17.2314,
+    "settings": {
+      "scope": "selected",
+      "encoding": "csv",
+      "delimiter": ";"
+    },
+    "review_verdict": "ACCEPT"
+  },
+  {
+    "round": 3,
+    "position": 2,
+    "route": "luna",
+    "calls": [
+      {
+        "role": "implementer",
+        "model": "gpt-6-luna",
+        "wall_s": 8.529,
+        "effort": "low",
+        "usage": {
+          "inputTokens": 19315,
+          "cachedInputTokens": 0,
+          "outputTokens": 32,
+          "cacheWriteInputTokens": 0
+        }
+      }
+    ],
+    "accepted": true,
+    "gate_passed": true,
+    "wall_s": 8.6971,
+    "settings": {
+      "scope": "selected",
+      "encoding": "csv",
+      "delimiter": ";"
+    }
+  },
+  {
+    "round": 3,
+    "position": 3,
+    "route": "astra",
+    "calls": [
+      {
+        "role": "implementer",
+        "model": "gpt-6.2-astra",
+        "wall_s": 7.6327,
+        "effort": "medium",
+        "usage": {
+          "inputTokens": 21316,
+          "cachedInputTokens": 0,
+          "outputTokens": 32,
+          "cacheWriteInputTokens": 0
+        }
+      }
+    ],
+    "accepted": true,
+    "gate_passed": true,
+    "wall_s": 7.7965,
+    "settings": {
+      "scope": "selected",
+      "encoding": "csv",
+      "delimiter": ";"
+    }
+  }
+]

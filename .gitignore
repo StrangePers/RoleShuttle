@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+.env
+.env.*
+*.sqlite*
+*.db
+*.log
+*.pem
+*.key
+*.dpapi
+.roleshuttle/

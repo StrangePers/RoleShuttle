@@ -1,0 +1,9 @@
+{
+  "port": 11434,
+  "roles": {
+    "research": "qwen2.5-coder:1.5b",
+    "implement": "qwen2.5-coder:1.5b",
+    "specialist": "qwen2.5-coder:1.5b",
+    "review": "qwen2.5-coder:1.5b"
+  }
+}

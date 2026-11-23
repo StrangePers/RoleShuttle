@@ -1,0 +1,5 @@
+# North / snapshot API
+
+North sends a full replacement snapshot for an order. Fields are id (opaque string), seq (non-negative integer), state and total. The total is a non-negative decimal major-unit string with up to two digits after the decimal separator, in a fixed two-decimal currency; normalize with exact decimal arithmetic. An id is scoped to its supplier, whose public key is north.
+
+The highest seq wins regardless of delivery order. Duplicate snapshots with equal version and identical business fields are harmless. For multiple snapshots at the same highest seq with conflicting business fields, quarantine that order (omit it); a higher subsequent clean snapshot resolves that conflict. Business fields are state and numeric total, so "5" and "5.00" carry equal value. Extra metadata is informational. A paid snapshot contributes positive minor units including zero, refunded contributes negative minor units, pending contributes nothing. See the compatibility notes for cancelled snapshots.

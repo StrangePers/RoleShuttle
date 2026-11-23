@@ -1,0 +1,71 @@
+{
+  "codex": {
+    "roles": {
+      "assistant": {
+        "model": "gpt-6-luna",
+        "effort": "low"
+      },
+      "coordinator": {
+        "model": "gpt-6.2-sol",
+        "effort": "low"
+      },
+      "implementer": {
+        "model": "gpt-6.2-sol",
+        "effort": "medium"
+      },
+      "specialist": {
+        "model": "gpt-6.2-sol",
+        "effort": "high"
+      },
+      "architect": {
+        "model": "gpt-6.2-astra",
+        "effort": "medium"
+      },
+      "reviewer": {
+        "model": "gpt-6.2-astra",
+        "effort": "medium"
+      }
+    }
+  },
+  "opencode-go": {
+    "roles": {
+      "assistant": {
+        "model": "deepseek-v4.1-flash"
+      },
+      "coordinator": {
+        "model": "deepseek-v4.1-flash"
+      },
+      "implementer": {
+        "model": "kimi-k2.7-code"
+      },
+      "specialist": {
+        "model": "deepseek-v4.1-flash"
+      },
+      "architect": {
+        "model": "gemini-4-argon"
+      },
+      "reviewer": {
+        "model": "kimi-k3.1-pro"
+      }
+    },
+    "lanes": {
+      "architecture": {
+        "model": "kimi-k3.1-pro"
+      },
+      "critical": {
+        "model": "kimi-k3.1-pro"
+      }
+    }
+  },
+  "openrouter-free": {
+    "preferred_models": [
+      "cohere/north-mini-code:free",
+      "nvidia/nemotron-3-ultra-550b-a55b:free"
+    ],
+    "require_tools": true,
+    "require_zero_input_and_output_price": true,
+    "model_suffix": ":free",
+    "other_eligible_models": "by_model_id",
+    "paid_fallback": false
+  }
+}

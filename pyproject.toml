@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "roleshuttle"
+version = "0.1.0a14"
+license = "MIT"
+license-files = ["LICENSE"]
+description = "Local controller tools for delegating and reviewing coding tasks"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+roleshuttle = "roleshuttle.cli:main"
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["roleshuttle"]
+
+[tool.setuptools.package-data]
+roleshuttle = ["demo.html", "SKILL.md", "presets.json"]

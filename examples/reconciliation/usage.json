@@ -1,0 +1,143 @@
+{
+  "date": "2026-11-23",
+  "fixture_base": "0564690a6a1c296a006e1712b77d9cbdb93424d6",
+  "release": "0.1.0a3",
+  "cli": "Codex 0.166.0",
+  "pairs": 1,
+  "order": [
+    "solo",
+    "routed"
+  ],
+  "account": "ChatGPT subscription",
+  "allow_extra_usage": false,
+  "actual_amount_charged": null,
+  "stages": [
+    {
+      "stage": "solo",
+      "arm": "solo",
+      "model": "gpt-6.2-astra",
+      "effort": "medium",
+      "model_evidence": "resolved_cli_selection",
+      "seconds_native_cli": 92,
+      "usage": {
+        "input_tokens": 119178,
+        "cached_input_tokens": 103424,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 1281,
+        "reasoning_output_tokens": 34
+      }
+    },
+    {
+      "stage": "worker",
+      "arm": "routed",
+      "model": "gpt-6.2-sol",
+      "effort": "medium",
+      "model_evidence": "resolved_cli_selection",
+      "seconds_native_cli": 104,
+      "usage": {
+        "input_tokens": 202463,
+        "cached_input_tokens": 162048,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 2215,
+        "reasoning_output_tokens": 278
+      }
+    },
+    {
+      "stage": "reviewer",
+      "arm": "routed",
+      "model": "gpt-6.2-astra",
+      "effort": "medium",
+      "model_evidence": "resolved_cli_selection",
+      "seconds_native_cli": 45,
+      "usage": {
+        "input_tokens": 61212,
+        "cached_input_tokens": 45440,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 192,
+        "reasoning_output_tokens": 0
+      }
+    }
+  ],
+  "follow_up": {
+    "date": "2026-11-23",
+    "reconciliation_attempts": 1,
+    "csv_pairs": 1,
+    "csv_order": [
+      "csv-luna",
+      "csv-astra"
+    ],
+    "csv_base": "9ebff7d853af924e03b36f661be517acdfea59c6",
+    "csv_held_out_groups": 7,
+    "reconciliation_verdict": "REVISE",
+    "corrected_source": "verbatim Python block from fresh Astra review",
+    "reconciliation_luna_first": {
+      "original_groups_passed": 21,
+      "post_hoc_precision_cases_passed": 0
+    },
+    "reconciliation_luna_reviewed": {
+      "original_groups_passed": 21,
+      "post_hoc_precision_cases_passed": 2
+    },
+    "actual_amount_charged": null,
+    "stages": [
+      {
+        "stage": "luna",
+        "model": "gpt-6-luna",
+        "effort": "low",
+        "model_evidence": "resolved_cli_selection",
+        "seconds_native_cli": 117,
+        "usage": {
+          "input_tokens": 226795,
+          "cached_input_tokens": 202752,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 3164,
+          "reasoning_output_tokens": 114
+        }
+      },
+      {
+        "stage": "luna-reviewer",
+        "model": "gpt-6.2-astra",
+        "effort": "medium",
+        "model_evidence": "resolved_cli_selection",
+        "seconds_native_cli": 64,
+        "usage": {
+          "input_tokens": 92829,
+          "cached_input_tokens": 76672,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1111,
+          "reasoning_output_tokens": 13
+        }
+      },
+      {
+        "stage": "csv-luna",
+        "model": "gpt-6-luna",
+        "effort": "low",
+        "model_evidence": "resolved_cli_selection",
+        "seconds_native_cli": 56,
+        "usage": {
+          "input_tokens": 138100,
+          "cached_input_tokens": 121984,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 706,
+          "reasoning_output_tokens": 0
+        }
+      },
+      {
+        "stage": "csv-astra",
+        "model": "gpt-6.2-astra",
+        "effort": "medium",
+        "model_evidence": "resolved_cli_selection",
+        "seconds_native_cli": 227,
+        "usage": {
+          "input_tokens": 682630,
+          "cached_input_tokens": 665344,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 796,
+          "reasoning_output_tokens": 0
+        },
+        "max_request_input_tokens": 31000,
+        "requests_with_usage": 23
+      }
+    ]
+  }
+}

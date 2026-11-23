@@ -1,0 +1,15 @@
+{
+  "project_id": "orders-example",
+  "title": "Preserve quotes in a selected-order CSV export",
+  "instructions": "Use the existing CSV writer. Preserve embedded quotes in customer names and keep unselected rows out.",
+  "type": "small_patch",
+  "complexity": "simple",
+  "risk": "low",
+  "mode": "write",
+  "role": "implementer",
+  "allowed_paths": ["src/export.py", "tests/test_export.py"],
+  "check_ids": ["csv-roundtrip"],
+  "context_tokens": 1200,
+  "max_wall_time": 300,
+  "allow_extra_usage": false
+}
