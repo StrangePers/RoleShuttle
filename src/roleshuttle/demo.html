@@ -35,7 +35,7 @@ h1{font-size:clamp(52px,5.7vw,82px);max-width:10em}.stage-list{display:grid;gap:
 .model-guide h2{max-width:14em}.model-guide p{margin-top:12px;max-width:60ch}.model-guide .note{margin-top:16px}
 .role-list details{border-bottom:1px solid var(--line)}.role-list summary{cursor:pointer;padding:12px 4px;color:var(--green)}.role-list summary span{margin-left:.7em;color:var(--muted);font-size:.85em}.role-body{padding:0 12px 15px 20px}.role-body p{font-size:15px}.role-body dl{display:grid;grid-template-columns:auto 1fr;gap:3px 16px;font-size:15px}.role-body dt{font-weight:650}.role-body dd{margin:0}
 @media(max-width:780px){.model-guide{grid-template-columns:1fr;gap:18px}}
-.trial{margin-top:clamp(48px,7vw,100px);border-top:1px solid var(--line);padding-top:24px;scroll-margin-top:20px}.trial p{max-width:76ch;margin:14px 0}.trial-scroll{max-width:100%;overflow-x:auto;margin:18px 0}.trial table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}.trial caption{text-align:left;color:var(--muted);padding-bottom:6px}.trial td,.trial th{text-align:right;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}.trial th:first-child{text-align:left}.trial summary{cursor:pointer;color:var(--green)}.importer{grid-template-columns:repeat(2,minmax(0,1fr))}@media(max-width:780px){.importer{grid-template-columns:1fr}}
+.trial{margin-top:clamp(48px,7vw,100px);border-top:1px solid var(--line);padding-top:24px;scroll-margin-top:20px}.trial p{max-width:76ch;margin:14px 0}.trial-scroll{max-width:100%;overflow-x:auto;margin:18px 0}.trial table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}.trial caption{text-align:left;color:var(--muted);padding-bottom:6px}.trial td,.trial th{text-align:right;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}.trial th:first-child{text-align:left}.trial summary{cursor:pointer;color:var(--green)}
 .handoff-steps{list-style:none;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1.5rem;margin:24px 0;padding:0}
 .handoff-steps li{border-top:2px solid var(--green);padding-top:12px}
 .handoff-steps p{margin:6px 0;color:var(--muted)}
@@ -63,6 +63,16 @@ h1{font-size:clamp(52px,5.7vw,82px);max-width:10em}.stage-list{display:grid;gap:
 <p>Follow the <a href="https://github.com/StrangePers/RoleShuttle/blob/v0.1.0a14/docs/codex-stage.md#try-the-order-export">Codex handoff guide</a>. Sign in to Codex, open the orders example in your coding agent and send the request under “Try the order export.”</p>
 <p>The chat used <code>opencode/deepseek-v4.1-flash-free</code>. RoleShuttle called <code>gpt-6-luna</code> for implementation and <code>gpt-6.2-astra</code> for review through the Codex subscription. These timings cover one live run. Setup and the independent CSV check took place outside the 75-second chat.</p>
 </details></section>
+<section id="rounding-review" class="trial" aria-labelledby="rounding-title">
+<h2 id="rounding-title">21 test groups passed. The importer still added three cents.</h2>
+<p>Luna’s importer converted order amounts to cents with <code>int(amount * 100)</code>. All 21 original test groups passed. With Python’s decimal precision set to six significant digits, the multiplication rounded <strong>12,345.67 to 1,234,570 cents</strong>. The correct result was <strong>1,234,567 cents</strong>.</p>
+<p>Astra reviewed Luna’s patch, found the same error with its own large-number example and supplied a fix using exact integer arithmetic. The corrected importer passed the original suite and both additional precision checks.</p>
+<p><strong>Astra’s review and fix took 64 seconds and cost an estimated $0.2044</strong> at Standard API rates for the tokens used in this subscription run.</p>
+<details><summary>Compare the full cost</summary>
+<p>Including Luna’s implementation, the two stages took 181 seconds and came to $0.2104. Astra alone finished the same task in 92 seconds at an estimated $0.2186. Each route ran once.</p>
+</details>
+<p><a href="https://github.com/StrangePers/RoleShuttle/blob/v0.1.0a14/docs/model-cost-pilot.md">Inspect the patches, rerun the checks and reproduce the cost estimate</a></p>
+</section>
 <section id="model-guide" class="model-guide" aria-labelledby="guide-title">
 <div><h2 id="guide-title">Which model fits each role?</h2>
 <p>Start with the least expensive model in your plan that can complete the role’s check. The main chat can stay on a lightweight, tool-capable model while another worker handles a difficult stage.</p><p class="note">These are RoleShuttle’s suggested starting points. Check which models your plan and executor offer. Codex entries follow the packaged preset. Kimi entries marked Go refer to the Go preset. For other plans, confirm the exact model and tool support in your executor.</p>
@@ -93,7 +103,7 @@ h1{font-size:clamp(52px,5.7vw,82px);max-width:10em}.stage-list{display:grid;gap:
 <tr><th scope="row">Luna + Astra review</th><td>40,912</td><td>133.7</td><td>17.99 s</td><td>$0.178790</td></tr>
 </tbody></table></div>
 <details><summary>How we measured</summary><p>On November 23, 2026 each implementer received the same requirements and settings in a fresh Codex subscription thread. We rotated the order across three rounds. Time includes the native calls and the final CSV check. A script handled the handoff. The twelve calls reported zero cached or cache-write tokens. Dollar figures use <a href="https://developers.openai.com/api/docs/pricing">Standard API token prices</a>. In the source checkout, run <code>python -I -B examples/csv-routes/summary.py</code> to reproduce the estimates offline.</p></details>
-</section><section class="details importer" aria-label="Separate importer experiment"><div><h3>When the tests missed a cent</h3><p>On a two-supplier import, Luna passed the original 21 checks. Astra found a rounding error during review and returned an exact calculation.</p></div><div><h3>The cost of the whole fix</h3><p>The reviewed importer came to $0.2104 with Luna and Astra, versus $0.2186 with Astra alone. The routed workers took 181 seconds in total versus 92 seconds solo.</p></div></section></main>
+</section></main>
 <footer><span>RoleShuttle · MIT · © 2026 StrangePers</span><span><a href="https://github.com/StrangePers/RoleShuttle">Repository</a> · <a href="https://github.com/StrangePers/RoleShuttle/releases/tag/v0.1.0a14">Download preview</a> · <a href="https://github.com/StrangePers/agentwhisker">AgentWhisker</a> · <a href="https://github.com/StrangePers/project-fieldnotes">Project Fieldnotes</a></span></footer>
 <script>
 const el = id => document.getElementById(id);
