@@ -1,5 +1,7 @@
 # RoleShuttle
 
+[Interactive walkthrough](https://strangepers.github.io/RoleShuttle/) · [Download the v0.1.0a14 preview](https://github.com/StrangePers/RoleShuttle/releases/tag/v0.1.0a14)
+
 Choose the model you want to talk to. Choose who does the difficult work.
 
 You can use a lightweight model for everyday conversation. When an export bug needs a design decision, your main agent can send the relevant code to the specialist you chose, get a second opinion from your reviewer, then apply and test the change. If the requirements are ambiguous, the question comes back to you in the same chat. You can also keep a strong conversation model and delegate routine investigation to smaller workers.

@@ -60,7 +60,7 @@ h1{font-size:clamp(52px,5.7vw,82px);max-width:10em}.stage-list{display:grid;gap:
   <li><h3>OpenCode applied and tested it</h3><p>The chat edited only <code>options.json</code> and ran the project test. A separate run then passed all seven CSV cases.</p><small>75 s from the first chat event to the last</small></li>
 </ol>
 <details><summary>Reproduce this handoff</summary>
-<p>Follow <code>docs/codex-stage.md</code> in the source checkout. Sign in to Codex, open the orders example in your coding agent and send the request under “Try the order export.”</p>
+<p>Follow the <a href="https://github.com/StrangePers/RoleShuttle/blob/v0.1.0a14/docs/codex-stage.md#try-the-order-export">Codex handoff guide</a>. Sign in to Codex, open the orders example in your coding agent and send the request under “Try the order export.”</p>
 <p>The chat used <code>opencode/deepseek-v4.1-flash-free</code>. RoleShuttle called <code>gpt-6-luna</code> for implementation and <code>gpt-6.2-astra</code> for review through the Codex subscription. These timings cover one live run. Setup and the independent CSV check took place outside the 75-second chat.</p>
 </details></section>
 <section id="model-guide" class="model-guide" aria-labelledby="guide-title">
@@ -94,7 +94,7 @@ h1{font-size:clamp(52px,5.7vw,82px);max-width:10em}.stage-list{display:grid;gap:
 </tbody></table></div>
 <details><summary>How we measured</summary><p>On November 23, 2026 each implementer received the same requirements and settings in a fresh Codex subscription thread. We rotated the order across three rounds. Time includes the native calls and the final CSV check. A script handled the handoff. The twelve calls reported zero cached or cache-write tokens. Dollar figures use <a href="https://developers.openai.com/api/docs/pricing">Standard API token prices</a>. In the source checkout, run <code>python -I -B examples/csv-routes/summary.py</code> to reproduce the estimates offline.</p></details>
 </section><section class="details importer" aria-label="Separate importer experiment"><div><h3>When the tests missed a cent</h3><p>On a two-supplier import, Luna passed the original 21 checks. Astra found a rounding error during review and returned an exact calculation.</p></div><div><h3>The cost of the whole fix</h3><p>The reviewed importer came to $0.2104 with Luna and Astra, versus $0.2186 with Astra alone. The routed workers took 181 seconds in total versus 92 seconds solo.</p></div></section></main>
-<footer><span>RoleShuttle · MIT · © 2026 StrangePers</span><span><a href="https://github.com/StrangePers/agentwhisker">AgentWhisker</a> · <a href="https://github.com/StrangePers/project-fieldnotes">Project Fieldnotes</a></span></footer>
+<footer><span>RoleShuttle · MIT · © 2026 StrangePers</span><span><a href="https://github.com/StrangePers/RoleShuttle">Repository</a> · <a href="https://github.com/StrangePers/RoleShuttle/releases/tag/v0.1.0a14">Download preview</a> · <a href="https://github.com/StrangePers/agentwhisker">AgentWhisker</a> · <a href="https://github.com/StrangePers/project-fieldnotes">Project Fieldnotes</a></span></footer>
 <script>
 const el = id => document.getElementById(id);
 let step = 0;
