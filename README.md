@@ -74,7 +74,7 @@ roleshuttle preset openrouter-free
 | OpenCode Go | Six role assignments plus separate architecture and critical-task choices |
 | OpenRouter Free | An ordered preference for tool-capable free routes, with no paid fallback |
 
-The commands return JSON offline. To use a choice for live work, your agent needs an authorized executor that supports that model. [Cloud preset guide](docs/cloud-presets.md)
+The commands return JSON offline. To use a choice for live work, your agent needs an authorized executor that supports that model. Run `roleshuttle models serve` to edit assignments in your private profile. [Cloud preset guide](docs/cloud-presets.md) · [Local model settings](docs/integrations.md#standalone-model-settings)
 
 Using a different subscription? A fast, tool-capable model such as Claude Haiku or Gemini Flash can handle conversation and bounded lookups. For a consequential design decision, consider Claude Opus or Gemini Pro. Open **Which model fits each role?** in `roleshuttle demo --open` for all six roles, Claude, Gemini, Codex, Kimi and Qwen examples, and a check for each assignment. [Guide for other subscriptions](docs/cloud-presets.md#choose-equivalents-on-another-subscription) · [Worked example](examples/choose-workers.md)
 
@@ -164,7 +164,7 @@ The optional bridge connects to a separately configured task runtime. Worktree-w
 
 To reserve a paid model for architecture decisions or review, configure that role, provider and spending permissions in your compatible runtime. The standalone `delegate` and `consult` commands use locally installed Ollama models.
 
-Set `ROLESHUTTLE_RUNTIME_ARGV` outside the checkout to a JSON array containing the absolute executable path and any fixed launcher arguments. A directly installed compatible CLI needs only its executable path. Invoke `roleshuttle task show --task-id <id> --collect` to read a report. Running `roleshuttle skill` prints the controller instructions. The project skill installation is opt-in.
+Configure the absolute runtime executable and any fixed arguments in your [private profile](docs/integrations.md#private-runtime-configuration). The `ROLESHUTTLE_RUNTIME_ARGV` JSON array is also supported. Invoke `roleshuttle task show --task-id <id> --collect` to read a report, or run `roleshuttle dashboard` to open the local panel if your runtime supplies one. Running `roleshuttle skill` prints the controller instructions. The project skill installation is opt-in.
 
 The [example task contract](examples/export-stage.json) illustrates one bounded implementation stage. To use it with a compatible runtime, first register your own trusted project and its check, then substitute their IDs and allowed paths. The example disables extra usage.
 

@@ -14,17 +14,24 @@ def relative_path(value, *, directory=False):
     return "/".join(parts) + ("/" if directory and path.endswith("/") else "")
 
 
-def check_scope(repository, changed_paths, allowed_paths):
+def safe_path(value, *, directory=False):
+    result = relative_path(value, directory=directory)
+    if any(ord(c) < 32 for c in result) or any(p.lower() == ".git" for p in result.split("/")):
+        raise ValueError("Git internals and control characters are forbidden")
+    return result
+
+
+def check_scope(repository, changed_paths, allowed_paths, *, directories=False):
     root = Path(repository).resolve()
     allowed = [relative_path(p, directory=True) for p in allowed_paths]
     errors = []
     for value in changed_paths:
         try:
-            path = relative_path(value)
+            path = relative_path(value, directory=directories)
             if not (root / path).resolve().is_relative_to(root):
                 raise ValueError("symlink escapes repository")
             child = root
-            for part in path.split("/"):
+            for part in path.rstrip("/").split("/"):
                 child = child / part
                 if child.is_symlink() or getattr(child, "is_junction", lambda: False)():
                     raise ValueError("changed path traverses a symlink/junction")

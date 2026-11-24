@@ -1,5 +1,5 @@
 import asyncio
-from collections import deque
+from collections import Counter, deque
 import json
 import time
 import unittest
@@ -90,6 +90,27 @@ class CodexStageTests(unittest.TestCase):
             client.event(name, **params)
             with self.assertRaises(ValueError):
                 client.run()
+
+    def test_cancellation_requires_matching_terminal_and_provider_confirmation(self):
+        client = FakeClient()
+        observed = Counter({"response.created": 2, "response.completed": 1})
+
+        async def interrupt(method, params):
+            self.assertEqual(method, "turn/interrupt")
+            self.assertEqual(params, {"threadId": "t", "turnId": "u"})
+            observed.update({"response.interrupt.accepted": 1, "response.incomplete": 1})
+            return 101
+
+        client.begin_request = interrupt
+        client.event("turn/completed", turn={"id": "other", "status": "interrupted"})
+        client.event("turn/completed", turn={"id": "u", "status": "interrupted"})
+        client.events.append({"id": 101, "result": {}})
+        report = asyncio.run(stage(client, "implementer", "Accepted excerpts", ".", ASSIGNMENT,
+                                   cancellation=lambda thread, turn, active: active, evidence=observed.copy))
+        self.assertEqual(report["status"], "cancelled")
+        self.assertEqual(report["interruption"]["before"]["response.created"], 2)
+        self.assertEqual(report["interruption"]["after"]["response.incomplete"], 1)
+        self.assertTrue(report["interruption"]["native_acknowledged"])
 
     def test_question_and_usage_return_to_controller(self):
         client = FakeClient()

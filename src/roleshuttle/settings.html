@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model settings · RoleShuttle</title>
+<style>
+  :root { color-scheme: light dark; font: 16px system-ui, sans-serif; }
+  body { margin: auto; max-width: 68rem; padding: clamp(1rem, 4vw, 3rem); }
+  h1 { margin: 0 0 .5rem; font-size: 2.25rem; letter-spacing: -.035em; }
+  p { max-width: 60ch; }
+  .controls, .actions { display: flex; flex-wrap: wrap; align-items: end; gap: .65rem; margin: 1.25rem 0; }
+  fieldset { border: 1px solid gray; border-radius: .5rem; margin: 1rem 0; padding: 1rem; }
+  .row { display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 1fr) minmax(12rem, 2fr) minmax(6rem, 1fr); gap: .65rem; align-items: end; padding: .5rem 0; }
+  label { display: grid; gap: .26rem; }
+  input, select, button { font: inherit; padding: .45rem; min-width: 0; }
+  button { cursor: pointer; }
+  #routing-result { overflow-wrap: anywhere; }
+  #routing-result li { margin-block: .25rem; }
+  #console-diff, #local-diff { overflow: auto; max-height: 32rem; padding: 1rem; border: 1px solid gray; }
+  #console-review, #local-id { overflow-wrap: anywhere; }
+  :focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
+  @media (max-width: 700px) { .row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 350px) { .row { grid-template-columns: 1fr; } }
+</style>
+<main>
+  <h1>Model settings</h1>
+  <section id="local-tasks" aria-labelledby="local-title" hidden>
+    <h2 id="local-title">Autonomous RoleShuttle tasks</h2>
+    <p>Extra Usage is off. <span id="local-model"></span> <a id="local-history" hidden>Agent Console r28 history</a></p>
+    <form id="local-form">
+      <fieldset>
+        <legend>New task</legend>
+        <div class="controls">
+          <label>Project <select id="local-project" required></select></label>
+          <label>Task title <input id="local-task-title" maxlength="160" required></label>
+        </div>
+        <div id="local-paths"></div>
+        <label>Approved instructions and excerpts <textarea id="local-input" rows="4" maxlength="16384" required></textarea></label>
+        <button type="submit">Prepare local task</button>
+      </fieldset>
+    </form>
+    <label>RoleShuttle history <select id="local-records"></select></label>
+    <p id="local-status" role="status"></p>
+    <div id="local-controls" hidden>
+      <p id="local-id"></p>
+      <p id="local-question"></p>
+      <label id="local-message-label" hidden>Answer or revision comment <textarea id="local-message" rows="3" maxlength="4096"></textarea></label>
+      <label id="local-proof-label" hidden>Project acceptance evidence JSON <textarea id="local-proof" rows="3"></textarea></label>
+      <div class="actions" id="local-actions">
+        <button type="button" data-action="launch" hidden>Launch on Codex</button>
+        <button type="button" data-action="status">Refresh task</button>
+        <button type="button" data-action="cancel" hidden>Stop active request</button>
+        <button type="button" data-action="answer" hidden>Send answer</button>
+        <button type="button" data-action="apply" hidden>Apply model patch</button>
+        <button type="button" data-action="diff" hidden>Review diff</button>
+        <button type="button" data-action="check" hidden>Run checks</button>
+        <button type="button" data-action="revise" hidden>Request revision</button>
+        <button type="button" data-action="accept" hidden>Accept result</button>
+      </div>
+      <pre id="local-diff" hidden></pre>
+    </div>
+  </section>
+  <section id="console-tasks" aria-labelledby="console-title" hidden>
+    <h2 id="console-title">Model tasks via Agent Console r28</h2>
+    <p>Extra Usage is off for tasks prepared here.</p>
+    <form id="console-form">
+      <div class="controls">
+        <label>Registered project <select id="console-project" required></select></label>
+        <button id="console-refresh" type="button">Reload projects</button>
+      </div>
+      <label>Title <input id="console-task-title" maxlength="160" required></label>
+      <label>Instructions <textarea id="console-instructions" rows="5" maxlength="2500" required></textarea></label>
+      <div class="controls" id="console-fields"></div>
+      <label>Total task time budget (minutes) <input id="console-minutes" type="number" min="1" step="1" value="5" required></label>
+      <fieldset><legend>Allowed paths</legend><div id="console-paths"></div></fieldset>
+      <fieldset><legend>Project checks</legend><div id="console-checks"></div></fieldset>
+      <div class="actions">
+        <button id="console-prepare" type="submit" disabled>Prepare task</button>
+        <button id="console-launch" type="button" disabled>Launch via r28</button>
+        <button id="console-cancel" type="button" disabled hidden>Stop task</button>
+        <a id="console-history" target="_blank" rel="noopener" hidden>Open in shared history</a>
+      </div>
+    </form>
+    <form id="console-resume" class="controls">
+      <label>Panel task ID <input id="console-task-id" required pattern="[0-9a-f]{32}" maxlength="32"></label>
+      <button id="console-open-task" type="submit">Open task</button>
+    </form>
+    <p id="console-status" role="status"></p>
+    <dialog id="console-cancel-dialog" aria-labelledby="console-cancel-title">
+      <h3 id="console-cancel-title">Stop this task?</h3>
+      <p id="console-cancel-task"></p>
+      <p id="console-cancel-scope"></p>
+      <form method="dialog" class="actions">
+        <button value="keep" autofocus>Keep running</button>
+        <button value="stop">Stop via r28</button>
+      </form>
+    </dialog>
+    <form id="console-reconcile" aria-labelledby="console-reconcile-title" hidden>
+      <h3 id="console-reconcile-title">Reconcile cancellation</h3>
+      <p>Use provider evidence for the same request. Local process exit alone does not confirm that the provider stopped.</p>
+      <label><input id="console-local-stopped" type="checkbox" required> I confirmed that the local processes stopped</label>
+      <label><input id="console-provider-stopped" type="checkbox" required> I confirmed that the provider request ended</label>
+      <label>Inspection reason <textarea id="console-reconcile-reason" rows="3" minlength="10" maxlength="2000" required></textarea></label>
+      <button id="console-submit-reconcile" type="submit" disabled>Confirm reconciliation</button>
+    </form>
+    <form id="console-question" aria-labelledby="console-question-title" hidden>
+      <h3 id="console-question-title">Model question</h3>
+      <p id="console-question-text"></p>
+      <label>Answer <textarea id="console-answer" required maxlength="4000" rows="3"></textarea></label>
+      <button id="console-send-answer" type="submit" disabled>Send answer</button>
+    </form>
+    <p id="console-question-status" role="status"></p>
+    <section id="console-review" aria-labelledby="console-review-title" hidden>
+      <h3 id="console-review-title">Review result</h3>
+      <div class="actions">
+        <button id="console-show-diff" type="button">Open diff</button>
+        <button id="console-check" type="button" disabled>Run r28 checks</button>
+        <button id="console-accept" type="button" disabled>Accept result</button>
+      </div>
+      <ul id="console-check-results" aria-label="r28 check results"></ul>
+      <form id="console-correction" hidden>
+        <label>Correction comment <textarea id="console-feedback" rows="3" minlength="10" maxlength="8000" required></textarea></label>
+        <p id="console-correction-help">Open the diff and run r28 checks before requesting a correction. r28 uses the task’s remaining time and attempt budget.</p>
+        <button id="console-correct" type="submit" aria-describedby="console-correction-help" disabled>Request correction</button>
+      </form>
+      <p id="console-review-status" role="status"></p>
+      <pre id="console-diff" aria-label="Git diff" tabindex="0" hidden></pre>
+    </section>
+  </section>
+  <p>Save role and task-category assignments in this RoleShuttle profile. To use a saved Codex role, run <code>codex-stage --use-profile</code>.</p>
+  <div class="controls">
+    <label><span id="preset-label">Preset</span><select id="preset" aria-labelledby="preset-label"></select></label>
+    <button id="load-preset" type="button">Load preset into draft</button>
+  </div>
+  <form id="settings">
+    <fieldset><legend>Roles</legend><div id="roles"></div></fieldset>
+    <fieldset><legend>Task categories</legend><div id="lanes"></div></fieldset>
+    <div class="actions">
+      <button id="save" type="submit" disabled>Save settings</button>
+      <button id="reload" type="button">Reload saved settings</button>
+    </div>
+  </form>
+  <p id="status" role="status" aria-live="polite"></p>
+  <section aria-labelledby="routing-title">
+    <h2 id="routing-title">Recommended preview</h2>
+    <p>Choose a saved routing snapshot. The preview uses its recorded time and observations. It cannot launch a task.</p>
+    <form id="routing">
+      <div class="controls">
+        <label>Routing snapshot <input id="snapshot" type="file" accept=".json,application/json" required></label>
+        <button id="preview" type="submit">Preview route</button>
+      </div>
+    </form>
+    <p id="routing-status" role="status"></p>
+    <div id="routing-result"></div>
+  </section>
+</main>
+<script src="/settings.js" defer></script>
+</html>

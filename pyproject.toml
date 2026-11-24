@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "roleshuttle"
-version = "0.1.0a14"
+version = "0.1.0a14+homefix2.20261124"
 license = "MIT"
 license-files = ["LICENSE"]
 description = "Local controller tools for delegating and reviewing coding tasks"
@@ -23,4 +23,4 @@ where = ["src"]
 include = ["roleshuttle"]
 
 [tool.setuptools.package-data]
-roleshuttle = ["demo.html", "SKILL.md", "presets.json"]
+roleshuttle = ["demo.html", "SKILL.md", "presets.json", "settings.html", "settings.js", "r28_codex_shim.js", "r28_codex_shim.cmd"]

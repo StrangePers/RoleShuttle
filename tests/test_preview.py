@@ -55,10 +55,47 @@ class PreviewTests(unittest.TestCase):
         with patch.dict(os.environ, {"ROLESHUTTLE_RUNTIME_ARGV": argv}):
             self.assertEqual(cli.main(["task", *args]), 7)
         self.assertEqual(json.loads(capture.read_text()), ["task", *args])
+        dashboard = ["--port", "18767", "--task-id", "a" * 32, "--no-browser"]
+        with patch.dict(os.environ, {"ROLESHUTTLE_RUNTIME_ARGV": argv}):
+            self.assertEqual(cli.main(["dashboard", *dashboard]), 7)
+        self.assertEqual(json.loads(capture.read_text()), ["serve", *dashboard])
 
     def test_missing_runtime_is_explicit(self):
         with patch.dict(os.environ, {"ROLESHUTTLE_RUNTIME_ARGV": ""}):
             self.assertEqual(cli.main(["task", "show", "--task-id", "sample"]), 2)
+
+    def test_private_profile_publishes_distinct_runtime_tasks(self):
+        profile = self.root / "private"
+        profile.mkdir()
+        script = self.root / "runtime.py"
+        script.write_text(
+            "import json, sys\n"
+            "assert sys.argv[1:4] == ['task', 'show', '--task-id']\n"
+            "assert sys.argv[5:] == ['--wait-seconds', '0']\n"
+            "task_id = sys.argv[4]\n"
+            "if task_id.startswith('c'):\n"
+            "    raise SystemExit(2)\n"
+            "print(json.dumps(dict(task_id=task_id, status='running', "
+            "owner_decision_pending=task_id.startswith('b'), worktree='private-path')))\n",
+            encoding="utf-8",
+        )
+        (profile / "runtime.json").write_text(json.dumps({
+            "schema_version": 1, "argv": [sys.executable, str(script)]
+        }), encoding="utf-8")
+        running, waiting, missing = "a" * 32, "b" * 32, "c" * 32
+        environment = dict(os.environ, ROLESHUTTLE_HOME=str(profile))
+        environment.pop("ROLESHUTTLE_RUNTIME_ARGV", None)
+        path = profile / "agentwhisker-status.json"
+        with patch.dict(os.environ, environment, clear=True):
+            self.assertEqual(cli.main(["companion", "--task-id", running, "--task-id", waiting]), 0)
+            before = path.read_bytes()
+            payload = json.loads(before)
+            self.assertEqual(payload["state"], "waiting")
+            self.assertEqual([(item["id"], item["state"]) for item in payload["items"]],
+                             [(waiting, "waiting"), (running, "running")])
+            self.assertNotIn(b"private-path", before)
+            self.assertEqual(cli.main(["companion", "--task-id", running, "--task-id", missing]), 2)
+            self.assertEqual(path.read_bytes(), before)
 
     def test_companion_filters_input(self):
         report = self.root / "report.json"

@@ -9,7 +9,7 @@ import stat
 import subprocess
 import threading
 
-from .scope import check_scope, relative_path
+from .scope import check_scope, safe_path as _safe_path
 
 MAX_FILES = 1024
 MAX_FILE_BYTES = 4 * 1024 * 1024
@@ -75,6 +75,7 @@ def _git(root, *args, limit=MAX_FILE_BYTES):
     process = subprocess.Popen(
         ['git', '-c', 'safe.directory=' + str(root), '-c', 'core.quotePath=false',
          '-C', str(root), *args], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        env={key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")},
         creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
     chunks = []
     size = 0
@@ -115,11 +116,12 @@ def _names(root, *args, limit=None):
     return [p for p in values if p]
 
 
-def _safe_path(value, directory=False):
-    result = relative_path(value, directory=directory)
-    if any(ord(c) < 32 for c in result) or any(p.lower() == '.git' for p in result.split('/')):
-        raise ValueError('Git internals and control characters are forbidden')
-    return result
+def repository_head(root):
+    """Return the full current commit of this Git worktree root."""
+    top = Path(os.fsdecode(_git(root, "rev-parse", "--show-toplevel").rstrip(b"\r\n"))).resolve()
+    if top != root:
+        raise ValueError("Register the Git worktree root")
+    return _git(root, "rev-parse", "--verify", "HEAD^{commit}").decode("ascii").strip()
 
 
 def _inside(root, value):
@@ -265,8 +267,23 @@ def snapshot(root, contract, generated_paths=()):
     if truncated:
         violations.append(f'diff exceeds review display limit (actual {total_diff_bytes} bytes; '
                           f'configured {diff_limit} bytes)')
-    fingerprint = _digest({'task_id':contract['task_id'], 'base':base, 'head':head,
-                           'index':hashlib.sha256(index + flags).hexdigest(), 'files':manifests})
+    binding = {'task_id': contract['task_id'], 'base': base, 'head': head,
+               'index': hashlib.sha256(index + flags).hexdigest(), 'files': manifests}
+    context = []
+    for value in contract.get('review_paths', []):
+        try:
+            name = _safe_path(value)
+            path = _inside(root, name)
+            entry = path.stat()
+            if not stat.S_ISREG(entry.st_mode) or entry.st_nlink != 1 or entry.st_size > MAX_FILE_BYTES:
+                raise ValueError('expected a bounded regular review file')
+            with path.open('rb') as stream:
+                context.append({'path': name, 'sha256': hashlib.file_digest(stream, 'sha256').hexdigest()})
+        except (OSError, ValueError, RuntimeError):
+            violations.append(value + ': registered review context unavailable')
+    if context:
+        binding['review_context'] = context
+    fingerprint = _digest(binding)
     return dict(fingerprint=fingerprint, files=files, diff=''.join(diff_parts),
                 violations=violations, truncated=truncated, reviewable=not violations,
-                line_endings=line_endings)
+                line_endings=line_endings, **({"review_context": context} if context else {}))
