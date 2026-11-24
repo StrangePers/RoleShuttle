@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 from roleshuttle.local_acceptance import accept_task, check_task, reconcile_checks
 from roleshuttle.local_execution import execute_patch, inspect_result, reconcile_patch
+from roleshuttle.local_panel import action as panel_action
 from roleshuttle.local_model import answer_question, cancel_model, propose_patch, revise_patch
 from roleshuttle.local_tasks import prepare_task, register_project, resolve_project, show_task
 from roleshuttle.local_worktrees import create_worktree
@@ -76,6 +77,54 @@ class LocalExecutionTests(unittest.TestCase):
         for pool in item["availability"]["pools"].values():
             pool["observed_at"] = observed
         return task, item
+
+    def test_panel_baseline_check_uses_pinned_clean_worktree(self):
+        check = {"id": "python-unit", "argv": [sys.executable, "-I", "-S", "-c",
+                 "from pathlib import Path; assert Path('src/allowed.txt').read_bytes() == b'before\\n'"]}
+        register_project({**self.project, "checks": [check]}, self.project_revision)
+        (self.repo / "src/allowed.txt").write_bytes(b"local edits\n")
+        prepared = panel_action("prepare-baseline", {"project_id": "example", "request_id": "baseline-test"})
+        task_id = prepared["task_id"]
+        self.assertEqual(prepared["contract"]["base_revision"], self.git("rev-parse", "HEAD").decode().strip())
+        self.assertFalse(prepared["contract"]["allow_extra_usage"])
+        checked = panel_action("check-baseline", {"task_id": task_id})
+        receipt = checked["check_receipt"]
+        self.assertTrue(receipt["passed"])
+        self.assertEqual(receipt["base_revision"], prepared["contract"]["base_revision"])
+        self.assertEqual(receipt["checks"], [{"id": "python-unit", "status": "passed", "exit_code": 0}])
+        self.assertEqual(checked["attempts"], [])
+        self.assertNotIn("model_operation", checked)
+        self.assertEqual((self.repo / "src/allowed.txt").read_bytes(), b"local edits\n")
+        with self.assertRaises(ValueError):
+            accept_task(task_id, None)
+        (Path(checked["worktree"]) / "untracked.txt").write_bytes(b"unexpected\n")
+        with self.assertRaisesRegex(ValueError, "Worktree contains changes"):
+            panel_action("check-baseline", {"task_id": task_id})
+
+    def test_baseline_mutation_needs_reconciliation_before_retry(self):
+        check = {"id": "python-unit", "argv": [sys.executable, "-I", "-S", "-c", "pass"]}
+        register_project({**self.project, "checks": [check]}, self.project_revision)
+        task = panel_action("prepare-baseline", {"project_id": "example"})
+        task_id = task["task_id"]
+        commit = task["contract"]["base_revision"]
+
+        def mutate(check, target):
+            (target / "src/allowed.txt").write_bytes(b"changed by check\n")
+            return {"id": check["id"], "status": "passed", "exit_code": 0}
+
+        with patch("roleshuttle.local_acceptance.run_check", side_effect=mutate):
+            checked = panel_action("check-baseline", {"task_id": task_id})
+        self.assertEqual(checked["status"], "needs_review")
+        self.assertFalse(checked["check_receipt"]["worktree_unchanged"])
+        self.assertFalse(checked["check_receipt"]["passed"])
+        with self.assertRaisesRegex(ValueError, "Worktree contains changes"):
+            reconcile_checks(task_id, commit, confirm_checks_stopped=True)
+        (Path(checked["worktree"]) / "src/allowed.txt").write_bytes(b"before\n")
+        with self.assertRaises(ValueError):
+            panel_action("check-baseline", {"task_id": task_id})
+        reconciled = reconcile_checks(task_id, commit, confirm_checks_stopped=True)
+        self.assertIsNone(reconciled["check_receipt"])
+        self.assertTrue(panel_action("check-baseline", {"task_id": task_id})["check_receipt"]["passed"])
 
     def test_model_patch_is_replayed_without_second_request_and_accepted(self):
         task, item = self.model_task()

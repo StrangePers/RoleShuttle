@@ -1,4 +1,4 @@
-"""Bind operator-approved project checks and acceptance to a patch receipt."""
+"""Run registered checks on a clean baseline or a reviewed patch."""
 
 from pathlib import Path
 from uuid import uuid4
@@ -48,6 +48,44 @@ def unchanged(home, task, target, fingerprint):
         return False
 
 
+def baseline_unchanged(home, task):
+    try:
+        verify_task_worktree(home, task)
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def run_registered_checks(home, task, target, binding, *, baseline):
+    with database(write=True) as db:
+        _, checks = current_checks(db, task, target)
+        operation = {**binding, "id": uuid4().hex,
+                     "project_revision": task["contract"]["project_revision"], "started_at": stamp()}
+        task = update_task(db, task, phase="checking_baseline" if baseline else "checking_patch",
+                           status="running", active=True, check_operation=operation, check_receipt=None)
+    rows = []
+    stable = True
+    for check in checks:
+        try:
+            rows.append(run_check(check, target))
+        except (ValueError, OSError):
+            rows.append({"id": check["id"], "status": "failed", "exit_code": None})
+        stable = (baseline_unchanged(home, task) if baseline
+                  else unchanged(home, task, target, binding["fingerprint"]))
+        if not stable or rows[-1]["status"] != "passed":
+            break
+    with database(write=True) as db:
+        current = load_task(db, task["task_id"])
+        if current["revision"] != task["revision"]:
+            raise ValueError("Task changed while checks were running")
+        passed = stable and len(rows) == len(checks) and all(row["status"] == "passed" for row in rows)
+        receipt = {**operation, "finished_at": stamp(), "worktree_unchanged": stable,
+                   "checks": rows, "passed": passed}
+        status = ("completed" if passed else "failed") if baseline else "review"
+        return update_task(db, current, phase="baseline_checked" if baseline else "patch_applied",
+                           status=status if stable else "needs_review", active=False, check_receipt=receipt)
+
+
 def check_task(task_id, fingerprint):
     show_task(task_id)
     home = profile_home().resolve()
@@ -56,31 +94,22 @@ def check_task(task_id, fingerprint):
         if task["status"] == "accepted":
             raise ValueError("Task has already been accepted")
         target, attempt_id = approved_result(home, task, fingerprint)
-        with database(write=True) as db:
-            _, checks = current_checks(db, task, target)
-            operation = {"id": uuid4().hex, "fingerprint": fingerprint, "attempt_id": attempt_id,
-                         "project_revision": task["contract"]["project_revision"], "started_at": stamp()}
-            task = update_task(db, task, phase="checking_patch", status="running", active=True,
-                               check_operation=operation, check_receipt=None)
-        rows = []
-        stable = True
-        for check in checks:
-            try:
-                rows.append(run_check(check, target))
-            except (ValueError, OSError):
-                rows.append({"id": check["id"], "status": "failed", "exit_code": None})
-            stable = unchanged(home, task, target, fingerprint)
-            if not stable or rows[-1]["status"] != "passed":
-                break
-        with database(write=True) as db:
-            current = load_task(db, task_id)
-            if current["revision"] != task["revision"]:
-                raise ValueError("Task changed while checks were running")
-            receipt = {**operation, "finished_at": stamp(), "worktree_unchanged": stable,
-                       "checks": rows, "passed": stable and len(rows) == len(checks)
-                       and all(row["status"] == "passed" for row in rows)}
-            return update_task(db, current, phase="patch_applied", status="review" if stable else "needs_review",
-                               active=False, check_receipt=receipt)
+        return run_registered_checks(home, task, target, {"fingerprint": fingerprint, "attempt_id": attempt_id},
+                                     baseline=False)
+
+
+def check_baseline(task_id):
+    show_task(task_id)
+    home = profile_home().resolve()
+    with _operation_lock(home, task_id):
+        task = show_task(task_id)
+        contract = task["contract"]
+        if (contract["mode"] != "read" or contract["allow_extra_usage"]
+                or task.get("model_operation") or task["attempts"]
+                or task["phase"] not in {"worktree_ready", "baseline_checked"} or task["status"] == "needs_review"):
+            raise ValueError("Expected a local baseline task with a ready worktree")
+        target = verify_task_worktree(home, task)
+        return run_registered_checks(home, task, target, {"base_revision": contract["base_revision"]}, baseline=True)
 
 
 def verify_project_proof(proof, task, attempt_id, fingerprint, requirements, target):
@@ -149,12 +178,17 @@ def reconcile_checks(task_id, fingerprint, *, confirm_checks_stopped):
         task = show_task(task_id)
         check_operation = task.get("check_operation") or {}
         prior_receipt = task.get("check_receipt")
-        interrupted = task["phase"] == "checking_patch"
-        changed = (task["phase"] == "patch_applied" and task["status"] == "needs_review"
+        baseline = task["phase"] in {"checking_baseline", "baseline_checked"}
+        interrupted = task["phase"] in {"checking_patch", "checking_baseline"}
+        changed = (task["phase"] in {"patch_applied", "baseline_checked"} and task["status"] == "needs_review"
                    and prior_receipt and prior_receipt["worktree_unchanged"] is False)
-        if not (interrupted or changed) or check_operation.get("fingerprint") != fingerprint:
+        binding = "base_revision" if baseline else "fingerprint"
+        if not (interrupted or changed) or check_operation.get(binding) != fingerprint:
             raise ValueError("Expected a check requiring reconciliation with this fingerprint")
-        approved_result(home, {**task, "phase": "patch_applied", "status": "review"}, fingerprint)
+        if baseline:
+            verify_task_worktree(home, task)
+        else:
+            approved_result(home, {**task, "phase": "patch_applied", "status": "review"}, fingerprint)
         with database(write=True) as db:
             current = load_task(db, task_id)
             if current["revision"] != task["revision"]:
@@ -163,6 +197,7 @@ def reconcile_checks(task_id, fingerprint, *, confirm_checks_stopped):
             if interrupted:
                 operation["finished_at"] = operation["reconciled_at"]
             history = task.get("check_recoveries", [])
-            return update_task(db, current, phase="patch_applied", status="review", active=False,
+            return update_task(db, current, phase="worktree_ready" if baseline else "patch_applied",
+                               status="planned" if baseline else "review", active=False,
                                check_operation=operation, check_receipt=None,
                                check_recoveries=[*history, {"operation": operation, "receipt": prior_receipt}])

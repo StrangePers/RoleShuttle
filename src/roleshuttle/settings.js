@@ -604,7 +604,8 @@ function displayLocalTask(task) {
     }
     localTask = task;
     localField("controls").hidden = false;
-    localField("id").textContent = task.contract.title + " · " + task.task_id;
+    const base = task.contract.mode === "read" ? " · Base " + task.contract.base_revision.slice(0, 7) : "";
+    localField("id").textContent = task.contract.title + " · " + task.task_id + base;
     localField("status").textContent = "Task status: " + task.status +
         (task.check_receipt?.passed ? " · Checks passed" : "");
     localField("question").textContent = task.phase === "waiting_model_input" ? task.model_operation.question : "";
@@ -615,7 +616,7 @@ function displayLocalTask(task) {
 
 function refreshLocalControls() {
     if (!localTask) return;
-    const {phase, status, panel_input, model_operation} = localTask;
+    const {phase, status, contract, panel_input, model_operation} = localTask;
     const review = phase === "patch_applied";
     const visible = {
         launch: panel_input && (phase === "prepared" || phase === "worktree_ready" && !model_operation),
@@ -625,6 +626,8 @@ function refreshLocalControls() {
         apply: ["worktree_ready", "model_revision_ready"].includes(phase) && model_operation?.state === "returned",
         diff: review,
         check: review && status === "review" && localFingerprint,
+        "check-baseline": contract.mode === "read" && status !== "needs_review" &&
+            ["prepared", "worktree_ready", "baseline_checked"].includes(phase),
         revise: review && status === "review" && localFingerprint && panel_input && model_operation?.state === "returned",
         accept: review && status === "review" && localFingerprint && localTask.check_receipt?.passed,
     };
@@ -634,8 +637,14 @@ function refreshLocalControls() {
     }
 }
 
+function selectedLocalProject() {
+    return localCatalog.projects.find(row => row.id === localField("project").value);
+}
+
 function updateLocalProjects() {
-    const project = localCatalog.projects.find(row => row.id === localField("project").value);
+    const project = selectedLocalProject();
+    localField("prepare").disabled = !project?.codex_allowed;
+    localField("prepare-baseline").disabled = !project?.has_checks;
     localField("paths").replaceChildren();
     for (const path of project?.paths || []) {
         const checkbox = document.createElement("input");
@@ -653,10 +662,13 @@ async function loadLocalCatalog() {
     localField("project").replaceChildren(new Option("Choose a project", ""));
     for (const project of localCatalog.projects) {
         const option = new Option(project.name, project.id);
-        option.disabled = !project.codex_allowed;
+        option.disabled = !project.codex_allowed && !project.has_checks;
         localField("project").add(option);
     }
     if (previous) localField("project").value = previous;
+    const project = selectedLocalProject();
+    localField("prepare").disabled = !project?.codex_allowed;
+    localField("prepare-baseline").disabled = !project?.has_checks;
     const history = localField("history");
     history.hidden = !localCatalog.history;
     if (localCatalog.history) history.href = localCatalog.history;
@@ -677,6 +689,7 @@ localField("records").addEventListener("change", async event => {
 });
 localField("form").addEventListener("submit", async event => {
     event.preventDefault();
+    if (!selectedLocalProject()?.codex_allowed) return;
     const button = event.submitter;
     button.disabled = true;
     try {
@@ -686,7 +699,17 @@ localField("form").addEventListener("submit", async event => {
             request_id: crypto.randomUUID()}, "/api/local/prepare"));
         await loadLocalCatalog();
     } catch (error) { localField("status").textContent = error.message; }
-    finally { button.disabled = false; }
+    finally { button.disabled = !selectedLocalProject()?.codex_allowed; }
+});
+localField("prepare-baseline").addEventListener("click", async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+        displayLocalTask(await request({project_id: localField("project").value,
+            request_id: crypto.randomUUID()}, "/api/local/prepare-baseline"));
+        await loadLocalCatalog();
+    } catch (error) { localField("status").textContent = error.message; }
+    finally { button.disabled = !selectedLocalProject()?.has_checks; }
 });
 localField("actions").addEventListener("click", async event => {
     const action = event.target.dataset.action;

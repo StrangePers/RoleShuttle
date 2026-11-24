@@ -36,7 +36,8 @@
         </div>
         <div id="local-paths"></div>
         <label>Approved instructions and excerpts <textarea id="local-input" rows="4" maxlength="16384" required></textarea></label>
-        <button type="submit">Prepare local task</button>
+        <button id="local-prepare" type="submit">Prepare local task</button>
+        <button id="local-prepare-baseline" type="button" disabled>Prepare baseline checks</button>
       </fieldset>
     </form>
     <label>RoleShuttle history <select id="local-records"></select></label>
@@ -54,6 +55,7 @@
         <button type="button" data-action="apply" hidden>Apply model patch</button>
         <button type="button" data-action="diff" hidden>Review diff</button>
         <button type="button" data-action="check" hidden>Run checks</button>
+        <button type="button" data-action="check-baseline" hidden>Run baseline checks</button>
         <button type="button" data-action="revise" hidden>Request revision</button>
         <button type="button" data-action="accept" hidden>Accept result</button>
       </div>

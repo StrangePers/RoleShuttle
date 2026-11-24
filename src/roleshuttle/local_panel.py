@@ -6,16 +6,17 @@ import json
 import time
 
 from .codex_stage import native_client, subscription_limits
-from .local_acceptance import accept_task, check_task
+from .local_acceptance import accept_task, check_baseline, check_task
 from .local_execution import execute_patch, inspect_result
 from .local_model import answer_question, cancel_model, propose_patch, revise_patch
-from .local_tasks import database, prepare_task, show_task
+from .local_tasks import database, load_project, prepare_task, show_task
 from .local_worktrees import create_worktree
 from .model_settings import preset_assignments, read_settings
 from .profile import profile_home
 from .project_import import target_projects
 
-ACTIONS = {"prepare", "launch", "status", "apply", "diff", "check", "accept", "revise", "answer", "cancel"}
+ACTIONS = {"prepare", "prepare-baseline", "launch", "status", "apply", "diff", "check", "check-baseline",
+           "accept", "revise", "answer", "cancel"}
 
 
 def assignment():
@@ -32,7 +33,7 @@ def listing():
         projects = []
         for row in target_projects(db).values():
             projects.append({"id": row["id"], "name": row.get("name", row["id"]),
-                             "paths": row["allowed_paths"],
+                             "paths": row["allowed_paths"], "has_checks": bool(row.get("checks")),
                              "codex_allowed": row["external_code_allowed"] and "codex" in row.get("automatic_cloud", [])})
         tasks = []
         for record, in db.execute("SELECT record FROM tasks ORDER BY rowid DESC LIMIT 200"):
@@ -88,6 +89,15 @@ def action(name, request):
         return prepare_task({**contract, "mode": "write", "allow_extra_usage": False},
                             request_id=request.get("request_id"),
                             panel_input={"prompt": prompt, "assignment": request["assignment"]})
+    if name == "prepare-baseline":
+        project_id = request.get("project_id")
+        with database() as db:
+            project = load_project(db, project_id)
+        if not project.get("checks"):
+            raise ValueError("Register project checks before preparing a baseline task")
+        return prepare_task({"project_id": project_id, "title": f"Baseline checks: {project_id}",
+                             "mode": "read", "allowed_paths": [], "allow_extra_usage": False},
+                            request_id=request.get("request_id"))
     task_id = request.get("task_id")
     task = show_task(task_id)
     fingerprint = request.get("fingerprint")
@@ -99,6 +109,10 @@ def action(name, request):
         return inspect_result(task_id)
     if name == "check":
         return check_task(task_id, fingerprint)
+    if name == "check-baseline":
+        if task["phase"] == "prepared" and task["contract"]["mode"] == "read":
+            create_worktree(task_id)
+        return check_baseline(task_id)
     if name == "accept":
         return accept_task(task_id, fingerprint, proof=request.get("proof"))
     if name == "cancel":
