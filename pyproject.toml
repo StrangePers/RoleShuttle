@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "roleshuttle"
-version = "0.1.0a14+homefix2.20261124"
+version = "0.1.0a15"
 license = "MIT"
 license-files = ["LICENSE"]
 description = "Local controller tools for delegating and reviewing coding tasks"

@@ -99,6 +99,7 @@ def main(argv=None):
     model_actions = models.add_subparsers(dest="model_action", required=True)
     model_panel = model_actions.add_parser("serve", help="Open the local model settings panel")
     model_panel.add_argument("--port", type=int, default=0)
+    model_panel.add_argument("--local-tasks", action="store_true", help="Enable the autonomous local task panel")
     model_preview = model_actions.add_parser("preview-console", help="Preview assignments from an Agent Console config directory")
     model_preview.add_argument("config", type=Path)
     model_import = model_actions.add_parser("import-console", help="Apply compatible assignments from a reviewed preview")
@@ -237,7 +238,7 @@ def main(argv=None):
                 if not 0 <= args.port <= 65535:
                     model_panel.error("--port must be between 0 and 65535")
                 from .settings_server import serve_settings
-                serve_settings(args.port)
+                serve_settings(args.port, autonomous_tasks=args.local_tasks)
             return 0
         if args.action == "recommend":
             snapshot_input = json.loads(args.snapshot.read_text(encoding="utf-8-sig"))

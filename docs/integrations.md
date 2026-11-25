@@ -109,6 +109,39 @@ a plan without contacting a provider. Model availability and quota still depend
 on the observations supplied. Paths to installed tools, checkouts and operator
 evidence refer to files on the local machine.
 
+## Running baseline checks from the panel
+
+Install the RoleShuttle wheel with `python -m pip install <wheel-file>`.
+Use an absolute `ROLESHUTTLE_HOME` directory to start with a separate private
+profile. The default profile is `~/.roleshuttle`.
+
+Save a project configuration outside the repository. Replace the example paths
+with the absolute paths to a Git checkout and a Python environment with pytest
+installed.
+
+```json
+{
+  "id": "example",
+  "repository": "/absolute/path/to/project",
+  "allowed_paths": ["tests/"],
+  "checks": [
+    {"id": "python-unit", "argv": ["/absolute/path/to/python", "-B", "-m", "pytest", "-q", "tests"]}
+  ]
+}
+```
+
+```sh
+roleshuttle local-project register /absolute/path/to/project-profile.json
+roleshuttle models serve --local-tasks
+```
+
+In the loopback panel, select the project, then choose **Prepare baseline
+checks** and **Run baseline checks**. Preparation pins the project's current
+commit. RoleShuttle creates a clean, detached worktree there and runs the
+registered checks locally with Extra Usage disabled. For a failing check,
+**Open failed check log** opens the last 32 KiB of stdout and stderr. Project
+profiles, task receipts and check logs stay in the private profile.
+
 ## Preparing local tasks
 
 ```sh

@@ -32,6 +32,14 @@ class ModelSettingsTests(unittest.TestCase):
         environment.start()
         self.addCleanup(environment.stop)
 
+    def test_panel_local_tasks_are_opt_in_from_installed_command(self):
+        with patch("roleshuttle.settings_server.serve_settings") as serve:
+            self.assertEqual(main(["models", "serve"]), 0)
+            serve.assert_called_once_with(0, autonomous_tasks=False)
+            serve.reset_mock()
+            self.assertEqual(main(["models", "serve", "--local-tasks", "--port", "8901"]), 0)
+            serve.assert_called_once_with(8901, autonomous_tasks=True)
+
     def test_simultaneous_saves_reject_the_stale_revision(self):
         def save(model):
             try:

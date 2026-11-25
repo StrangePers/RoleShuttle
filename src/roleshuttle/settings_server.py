@@ -138,8 +138,8 @@ class SettingsServer(ThreadingHTTPServer):
         self.history_url = history_url
 
 
-def serve_settings(port):
-    with SettingsServer(port) as server:
+def serve_settings(port, *, autonomous_tasks=False):
+    with SettingsServer(port, autonomous_tasks=autonomous_tasks) as server:
         print(f"RoleShuttle model settings listening at {server.origin}", flush=True)
         webbrowser.open(server.origin + "/#token=" + server.token)
         try:
