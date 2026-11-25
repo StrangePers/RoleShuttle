@@ -1,11 +1,12 @@
 """Run registered checks on a clean baseline or a reviewed patch."""
 
 from pathlib import Path
+import re
 from uuid import uuid4
 
 from .check_runner import check_directory, executable_hash, run_check
 from .local_execution import _review
-from .local_tasks import database, load_project, load_task, show_task, stamp, update_task
+from .local_tasks import database, identifier, load_project, load_task, show_task, stamp, update_task
 from .local_worktrees import _operation_lock, verify_task_worktree
 from .profile import profile_home
 
@@ -56,6 +57,21 @@ def baseline_unchanged(home, task):
         return False
 
 
+def read_check_log(task_id, receipt_id, check_id):
+    if not isinstance(receipt_id, str) or not re.fullmatch(r"[0-9a-f]{32}", receipt_id):
+        raise ValueError("Invalid check receipt ID")
+    identifier(check_id)
+    with database() as db:
+        load_task(db, task_id)
+        if db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'check_logs'").fetchone():
+            row = db.execute(
+                "SELECT text, truncated FROM check_logs WHERE task_id = ? AND receipt_id = ? AND check_id = ?",
+                (task_id, receipt_id, check_id)).fetchone()
+            if row is not None:
+                return {"receipt_id": receipt_id, "check_id": check_id, "text": row[0], "truncated": bool(row[1])}
+    raise ValueError("Check log is unavailable for this task and receipt")
+
+
 def run_registered_checks(home, task, target, binding, *, baseline):
     with database(write=True) as db:
         _, checks = current_checks(db, task, target)
@@ -64,10 +80,13 @@ def run_registered_checks(home, task, target, binding, *, baseline):
         task = update_task(db, task, phase="checking_baseline" if baseline else "checking_patch",
                            status="running", active=True, check_operation=operation, check_receipt=None)
     rows = []
+    log = None
     stable = True
     for check in checks:
         try:
-            rows.append(run_check(check, target))
+            row = run_check(check, target)
+            log = row.pop("log", None)
+            rows.append(row)
         except (ValueError, OSError):
             rows.append({"id": check["id"], "status": "failed", "exit_code": None})
         stable = (baseline_unchanged(home, task) if baseline
@@ -81,9 +100,20 @@ def run_registered_checks(home, task, target, binding, *, baseline):
         passed = stable and len(rows) == len(checks) and all(row["status"] == "passed" for row in rows)
         receipt = {**operation, "finished_at": stamp(), "worktree_unchanged": stable,
                    "checks": rows, "passed": passed}
+        changes = {}
+        if log is not None:
+            check_id = rows[-1]["id"]
+            db.execute("""CREATE TABLE IF NOT EXISTS check_logs (
+                task_id TEXT NOT NULL, receipt_id TEXT NOT NULL, check_id TEXT NOT NULL,
+                text TEXT NOT NULL, truncated INTEGER NOT NULL,
+                PRIMARY KEY (task_id, receipt_id, check_id)
+            )""")
+            db.execute("INSERT INTO check_logs VALUES (?, ?, ?, ?, ?)",
+                       (task["task_id"], receipt["id"], check_id, log["text"], log["truncated"]))
+            changes["last_check_log"] = {"receipt_id": receipt["id"], "check_id": check_id}
         status = ("completed" if passed else "failed") if baseline else "review"
         return update_task(db, current, phase="baseline_checked" if baseline else "patch_applied",
-                           status=status if stable else "needs_review", active=False, check_receipt=receipt)
+                           status=status if stable else "needs_review", active=False, check_receipt=receipt, **changes)
 
 
 def check_task(task_id, fingerprint):

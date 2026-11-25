@@ -601,6 +601,8 @@ function displayLocalTask(task) {
     if (localTask?.revision !== task.revision) {
         localFingerprint = undefined;
         localField("diff").hidden = true;
+        localField("check-log").hidden = true;
+        localField("check-log").textContent = "";
     }
     localTask = task;
     localField("controls").hidden = false;
@@ -628,6 +630,7 @@ function refreshLocalControls() {
         check: review && status === "review" && localFingerprint,
         "check-baseline": contract.mode === "read" && status !== "needs_review" &&
             ["prepared", "worktree_ready", "baseline_checked"].includes(phase),
+        "check-log": Boolean(localTask.last_check_log),
         revise: review && status === "review" && localFingerprint && panel_input && model_operation?.state === "returned",
         accept: review && status === "review" && localFingerprint && localTask.check_receipt?.passed,
     };
@@ -718,6 +721,7 @@ localField("actions").addEventListener("click", async event => {
     const operation = localTask.model_operation;
     const body = {task_id: taskId, fingerprint: localFingerprint, operation_id: operation?.id,
                   message: localField("message").value};
+    if (action === "check-log") Object.assign(body, localTask.last_check_log);
     try {
         if (action === "accept" && localField("proof").value.trim()) body.proof = JSON.parse(localField("proof").value);
         localBusy = !["status", "cancel"].includes(action);
@@ -728,6 +732,13 @@ localField("actions").addEventListener("click", async event => {
             localFingerprint = result.fingerprint;
             localField("diff").textContent = result.diff;
             localField("diff").hidden = false;
+        } else if (action === "check-log") {
+            const log = localField("check-log");
+            const header = result.check_id + " · Receipt " + result.receipt_id;
+            const notice = result.truncated ? "\nEarlier output omitted." : "";
+            log.textContent = header + notice + "\n\n" + (result.text || "The check produced no output.");
+            log.hidden = false;
+            log.focus();
         } else {
             displayLocalTask(result);
             if (action === "check") localFingerprint = result.check_receipt.fingerprint;

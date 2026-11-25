@@ -16,7 +16,7 @@
   button { cursor: pointer; }
   #routing-result { overflow-wrap: anywhere; }
   #routing-result li { margin-block: .25rem; }
-  #console-diff, #local-diff { overflow: auto; max-height: 32rem; padding: 1rem; border: 1px solid gray; }
+  #console-diff, #local-diff, #local-check-log { overflow: auto; max-height: 32rem; padding: 1rem; border: 1px solid gray; }
   #console-review, #local-id { overflow-wrap: anywhere; }
   :focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
   @media (max-width: 700px) { .row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -56,10 +56,12 @@
         <button type="button" data-action="diff" hidden>Review diff</button>
         <button type="button" data-action="check" hidden>Run checks</button>
         <button type="button" data-action="check-baseline" hidden>Run baseline checks</button>
+        <button type="button" data-action="check-log" aria-controls="local-check-log" hidden>Open failed check log</button>
         <button type="button" data-action="revise" hidden>Request revision</button>
         <button type="button" data-action="accept" hidden>Accept result</button>
       </div>
       <pre id="local-diff" hidden></pre>
+      <pre id="local-check-log" tabindex="0" hidden></pre>
     </div>
   </section>
   <section id="console-tasks" aria-labelledby="console-title" hidden>

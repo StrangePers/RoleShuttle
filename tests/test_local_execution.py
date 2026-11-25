@@ -94,12 +94,38 @@ class LocalExecutionTests(unittest.TestCase):
         self.assertEqual(receipt["checks"], [{"id": "python-unit", "status": "passed", "exit_code": 0}])
         self.assertEqual(checked["attempts"], [])
         self.assertNotIn("model_operation", checked)
+        self.assertNotIn("last_check_log", checked)
         self.assertEqual((self.repo / "src/allowed.txt").read_bytes(), b"local edits\n")
         with self.assertRaises(ValueError):
             accept_task(task_id, None)
         (Path(checked["worktree"]) / "untracked.txt").write_bytes(b"unexpected\n")
         with self.assertRaisesRegex(ValueError, "Worktree contains changes"):
             panel_action("check-baseline", {"task_id": task_id})
+
+    def test_failed_check_log_is_bounded_and_bound_to_its_task_and_receipt(self):
+        program = ("import sys; print('x' * 100000); print('stdout marker'); "
+                   "print('<img src=x onerror=alert(1)>', file=sys.stderr); sys.exit(7)")
+        check = {"id": "python-unit", "argv": [sys.executable, "-I", "-S", "-u", "-c", program]}
+        register_project({**self.project, "checks": [check]}, self.project_revision)
+        prepared = panel_action("prepare-baseline", {"project_id": "example"})
+        task_id = prepared["task_id"]
+        checked = panel_action("check-baseline", {"task_id": task_id})
+        receipt = checked["check_receipt"]
+        self.assertEqual(receipt["checks"], [{"id": "python-unit", "status": "failed", "exit_code": 7}])
+        self.assertTrue(receipt["worktree_unchanged"])
+        self.assertNotIn("stdout marker", json.dumps(checked))
+        status = panel_action("status", {"task_id": task_id})
+        request = {"task_id": task_id, **status["last_check_log"]}
+        self.assertEqual(request["receipt_id"], receipt["id"])
+        log = panel_action("check-log", request)
+        self.assertTrue(log["truncated"])
+        self.assertLessEqual(len(log["text"].encode("utf-8")), 32 * 1024)
+        self.assertIn("stdout marker", log["text"])
+        self.assertIn("<img src=x onerror=alert(1)>", log["text"])
+        with self.assertRaises(ValueError):
+            panel_action("check-log", {**request, "task_id": self.task["task_id"]})
+        with self.assertRaises(ValueError):
+            panel_action("check-log", {**request, "receipt_id": "0" * 32})
 
     def test_baseline_mutation_needs_reconciliation_before_retry(self):
         check = {"id": "python-unit", "argv": [sys.executable, "-I", "-S", "-c", "pass"]}

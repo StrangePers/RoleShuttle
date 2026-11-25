@@ -6,7 +6,7 @@ import json
 import time
 
 from .codex_stage import native_client, subscription_limits
-from .local_acceptance import accept_task, check_baseline, check_task
+from .local_acceptance import accept_task, check_baseline, check_task, read_check_log
 from .local_execution import execute_patch, inspect_result
 from .local_model import answer_question, cancel_model, propose_patch, revise_patch
 from .local_tasks import database, load_project, prepare_task, show_task
@@ -16,7 +16,7 @@ from .profile import profile_home
 from .project_import import target_projects
 
 ACTIONS = {"prepare", "prepare-baseline", "launch", "status", "apply", "diff", "check", "check-baseline",
-           "accept", "revise", "answer", "cancel"}
+           "check-log", "accept", "revise", "answer", "cancel"}
 
 
 def assignment():
@@ -99,6 +99,8 @@ def action(name, request):
                              "mode": "read", "allowed_paths": [], "allow_extra_usage": False},
                             request_id=request.get("request_id"))
     task_id = request.get("task_id")
+    if name == "check-log":
+        return read_check_log(task_id, request.get("receipt_id"), request.get("check_id"))
     task = show_task(task_id)
     fingerprint = request.get("fingerprint")
     if name == "status":
