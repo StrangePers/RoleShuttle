@@ -41,14 +41,17 @@ class GoStreamTests(unittest.TestCase):
         from roleshuttle.go_stage import GoClientDisconnected, GoStage
         stopped=Event()
         active=Event()
+        log_id = "01a2195c-1234-7c21-97f9-000000000000"
+        recorded = []
         frame=event(id="go-456",model="fixture",choices=[{"delta":{"content":"first"}}])
         class Socket:
             def shutdown(self,_):
                 stopped.set()
         class Response(io.BytesIO):
             status=200
-            def getheader(self,*args):
-                return "text/event-stream"
+            def getheader(self, name, default=None):
+                return {"x-opencode-log-id": log_id.upper(),
+                        "Content-Type": "text/event-stream"}.get(name, default)
             def readline(self,*args):
                 line=super().readline(*args)
                 if not line:
@@ -66,7 +69,9 @@ class GoStreamTests(unittest.TestCase):
         stage=GoStage("fixture-key")
         with patch("roleshuttle.go_stage.HTTPSConnection",return_value=Connection()):
             with self.assertRaises(GoClientDisconnected) as raised:
-                stage.stream_request({},"s","fixture",lambda _:active.set(),active.is_set)
+                stage.stream_request({}, "s", "fixture", lambda _: active.set(), active.is_set,
+                                     on_request=recorded.append)
+        self.assertEqual(recorded, [log_id])
         self.assertEqual(raised.exception.response_id,"go-456")
         self.assertTrue(stopped.is_set())
 
@@ -95,3 +100,26 @@ class GoStreamTests(unittest.TestCase):
             response=stage.stream_request({},"s","fixture",lambda _:None,lambda: True)
         self.assertEqual(response["choices"][0]["message"]["content"],"full")
         connection.sock.shutdown.assert_not_called()
+
+    def test_log_header_is_optional_and_recorded_even_for_failed_requests(self):
+        from unittest.mock import Mock, patch
+        from roleshuttle.go_stage import GoStage
+
+        log_id = "01a2195c-1234-7c21-97f9-000000000000"
+        for header, expected in ((log_id, [log_id]), ("", []), ("../invalid", [])):
+            with self.subTest(header=header):
+                recorded = []
+
+                class Response(io.BytesIO):
+                    status = 429
+
+                    def getheader(self, name, default=None):
+                        return header if name == "x-opencode-log-id" else default
+
+                connection = Mock()
+                connection.getresponse.return_value = Response()
+                with patch("roleshuttle.go_stage.HTTPSConnection", return_value=connection):
+                    with self.assertRaisesRegex(ValueError, "successful event stream"):
+                        GoStage("fixture-key").stream_request(
+                            {}, "s", "fixture", lambda _: None, lambda: False, on_request=recorded.append)
+                self.assertEqual(recorded, expected)

@@ -47,6 +47,11 @@
       <p id="local-id"></p>
       <p id="local-question"></p>
       <p id="local-route" role="status"></p>
+      <p id="local-go-request" hidden>
+        OpenCode Go request <code id="local-go-request-id"></code> ·
+        <a id="local-go-request-link" target="_blank" rel="noopener noreferrer" hidden>Open request in OpenCode Console</a>
+        <span id="local-go-request-hint" hidden>Set the Go workspace in Advanced settings before launching a task to enable its link.</span>
+      </p>
       <pre id="local-go-closure" hidden></pre>
       <label id="local-go-close-label" hidden>Closure comment <textarea id="local-go-close-comment" rows="3" maxlength="4096" required></textarea></label>
       <label id="local-message-label" hidden>Answer or revision comment <textarea id="local-message" rows="3" maxlength="4096"></textarea></label>
@@ -181,6 +186,10 @@
       <legend>OpenCode Go</legend>
       <label><input id="advanced-go-restrict" type="checkbox"> Restrict Go to listed models</label>
       <label>Allowed Go models, one per line <textarea id="advanced-go-models" rows="5" spellcheck="false"></textarea></label>
+      <label>Console workspace ID for request links <input id="advanced-go-workspace" type="text"
+        placeholder="wrk_…" maxlength="84" spellcheck="false" autocomplete="off"
+        aria-describedby="advanced-go-workspace-help"></label>
+      <p id="advanced-go-workspace-help">Use the <code>wrk_…</code> segment from the OpenCode Console URL for the Go key's workspace.</p>
       <button id="advanced-go-refresh" type="button">Check subscription and catalog</button>
       <pre id="advanced-go-status" role="status"></pre>
     </fieldset>

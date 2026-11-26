@@ -21,7 +21,7 @@ IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/-]{0,159}")
 
 def defaults():
     return {"routes": {}, "route_catalog": {}, "timeouts": dict(TIMEOUTS), "go_models": None,
-            "local_servers": [], "fallbacks": {"roles": {}, "lanes": {}}}
+            "local_servers": [], "fallbacks": {"roles": {}, "lanes": {}}, "go_console_workspace": ""}
 
 
 def valid_id(value):
@@ -35,8 +35,13 @@ def validate_list(value):
 
 
 def normalize(value):
-    if not isinstance(value, dict) or set(value) != set(defaults()):
+    sections = set(defaults()) - {"go_console_workspace"}
+    if not isinstance(value, dict) or set(value) - {"go_console_workspace"} != sections:
         raise ValueError("Expected all advanced settings sections")
+    workspace = value.get("go_console_workspace", "")
+    if not isinstance(workspace, str) or (workspace and not re.fullmatch(r"wrk_[A-Za-z0-9]{1,80}", workspace)):
+        raise ValueError("Enter an OpenCode Console workspace ID beginning with wrk_, or leave it blank")
+    value = {**value, "go_console_workspace": workspace}
     routes, catalog, times = value["routes"], value["route_catalog"], value["timeouts"]
     fields = {"worker", "provider", "model", "tier", "pool", "boundary"}
     if not isinstance(catalog, dict) or len(catalog) > 300:
@@ -112,7 +117,7 @@ def read():
 
 
 def save(settings, revision):
-    model_settings.save_at(db_path(), settings, revision, normalize, defaults())
+    model_settings.save_at(db_path(), normalize(settings), revision, normalize, defaults())
     return read()
 
 
