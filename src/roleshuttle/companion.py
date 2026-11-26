@@ -37,7 +37,7 @@ def task_state(report):
         return "idle"
     if status in ("planned", "review", "needs_review", "blocked"):
         return "waiting"
-    if status in ("accepted", "cancelled"):
+    if status in ("accepted", "cancelled", "closed_manually"):
         return "idle"
     raise ValueError("Unrecognized task status")
 

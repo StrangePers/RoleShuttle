@@ -44,13 +44,13 @@ def normalize(settings):
     return settings
 
 
-def _read(db):
+def _read(db, validate=normalize, empty=EMPTY):
     version = db.execute("PRAGMA user_version").fetchone()[0]
     if version != 1:
         raise ValueError("Unsupported RoleShuttle settings database version")
     row = db.execute("SELECT revision, settings FROM revisions ORDER BY seq DESC LIMIT 1").fetchone()
-    return {"revision": row[0], "settings": normalize(json.loads(row[1]))} if row else {
-        "revision": "empty", "settings": {"roles": {}, "lanes": {}}}
+    return {"revision": row[0], "settings": validate(json.loads(row[1]))} if row else {
+        "revision": "empty", "settings": empty}
 
 
 def settings_path():
@@ -58,16 +58,22 @@ def settings_path():
 
 
 def read_settings():
-    path = settings_path()
+    return read_at(settings_path(), normalize, EMPTY)
+
+
+def read_at(path, validate, empty):
     if not path.is_file():
-        return {"revision": "empty", "settings": {"roles": {}, "lanes": {}}}
+        return {"revision": "empty", "settings": empty}
     with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as db:
-        return _read(db)
+        return _read(db, validate, empty)
 
 
 def save_settings(settings, revision):
-    normalize(settings)
-    path = settings_path()
+    return save_at(settings_path(), settings, revision, normalize, EMPTY)
+
+
+def save_at(path, settings, revision, validate, empty):
+    validate(settings)
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     with closing(sqlite3.connect(path)) as db, db:
         db.execute("BEGIN IMMEDIATE")
@@ -76,7 +82,7 @@ def save_settings(settings, revision):
                 raise ValueError("Unsupported RoleShuttle settings database version")
             db.execute("CREATE TABLE revisions (seq INTEGER PRIMARY KEY, revision TEXT UNIQUE, saved_at TEXT, settings TEXT)")
             db.execute("PRAGMA user_version = 1")
-        current = _read(db)
+        current = _read(db, validate, empty)
         if current["revision"] != revision:
             raise RevisionConflict("Settings changed. Reload before saving.")
         if current["settings"] == settings:

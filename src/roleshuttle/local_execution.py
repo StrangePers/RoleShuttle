@@ -88,7 +88,9 @@ def _start(record, digest, expected_files, model_operation, before):
         attempt = {"id": uuid4().hex, "executor": "local-patch", "patch_sha256": digest,
                    "expected_files": sorted(expected_files), "started_at": stamp(), "status": "applying"}
         if model_operation:
-            attempt.update(executor="codex-patch", model_operation_id=model_operation["id"])
+            executor = {"opencode_go":"opencode-go-patch","mac-omlx":"mesh-local-patch"}.get(
+                model_operation.get("provider"),"codex-patch")
+            attempt.update(executor=executor, model_operation_id=model_operation["id"])
             if "base_fingerprint" in model_operation:
                 attempt.update(base_fingerprint=before["fingerprint"], base_files=before["files"],
                                corrects_attempt=model_operation["corrects_attempt"])

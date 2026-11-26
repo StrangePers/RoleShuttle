@@ -8,12 +8,14 @@ import secrets
 import sqlite3
 import webbrowser
 
-from . import local_panel
+from . import advanced_settings, local_panel
 from .model_settings import EFFORTS, LANES, PROVIDERS, ROLES, RevisionConflict
 from .model_settings import preset_assignments, read_settings, save_settings
 from .recommended import preview_snapshot
 
-POST_LIMITS = {"/api/settings": 16_384, "/api/recommended": 1_048_576}
+POST_LIMITS = {"/api/settings": 16_384, "/api/recommended": 1_048_576,
+               "/api/advanced-settings": 65_536, "/api/advanced-preview": 1_048_576,
+               "/api/advanced-go-status": 64, "/api/advanced-local-status": 512}
 TASK_ACTIONS = {f"/api/console/{action}": action
                 for action in ("prepare", "launch", "cancel", "reconcile", "status", "answer", "diff", "check", "correct", "accept")}
 POST_LIMITS.update({path: 16_384 for path in TASK_ACTIONS})
@@ -73,6 +75,11 @@ class SettingsHandler(BaseHTTPRequestHandler):
                                       "providers": PROVIDERS, "efforts": EFFORTS, "presets": preset_assignments()})
             except (ValueError, OSError, sqlite3.Error):
                 self.json_reply(409, {"error": "Cannot read the local settings database"})
+        elif self.path == "/api/advanced-settings":
+            try:
+                self.json_reply(200, advanced_settings.read())
+            except (ValueError, OSError, sqlite3.Error):
+                self.json_reply(409, {"error": "Cannot read the advanced settings database"})
         elif self.path == PROJECTS_PATH:
             try:
                 tasks = self.server.console_tasks
@@ -112,6 +119,29 @@ class SettingsHandler(BaseHTTPRequestHandler):
                     self.json_reply(404, {"error": "The r28 task service is unavailable"})
                     return
                 self.json_reply(200, tasks.action(TASK_ACTIONS[self.path], request))
+                return
+            if self.path == "/api/advanced-local-status":
+                if not isinstance(request,dict) or set(request)!={"server_id"} or not isinstance(request["server_id"],str):
+                    raise ValueError("Expected a saved server ID")
+                self.json_reply(200, advanced_settings.local_status(request["server_id"]))
+                return
+            if self.path == "/api/advanced-go-status":
+                if request != {}:
+                    raise ValueError("Expected an empty Go status request")
+                self.json_reply(200, advanced_settings.go_status())
+                return
+            if self.path == "/api/advanced-preview":
+                self.json_reply(200, advanced_settings.preview_routing(request))
+                return
+            if self.path == "/api/advanced-settings":
+                if not isinstance(request, dict) or not isinstance(request.get("revision"),str):
+                    raise ValueError("Expected an advanced settings revision")
+                if set(request)=={"settings","revision"}:
+                    self.json_reply(200, advanced_settings.save(request["settings"],request["revision"]))
+                elif set(request)=={"restore","revision"}:
+                    self.json_reply(200, advanced_settings.restore(request["restore"],request["revision"]))
+                else:
+                    raise ValueError("Expected settings or an earlier revision to restore")
                 return
             if self.path == "/api/recommended":
                 self.json_reply(200, preview_snapshot(request))

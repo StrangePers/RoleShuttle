@@ -1,6 +1,6 @@
 # RoleShuttle
 
-[Interactive walkthrough](https://strangepers.github.io/RoleShuttle/) · [Download the v0.1.0a15 preview](https://github.com/StrangePers/RoleShuttle/releases/tag/v0.1.0a15)
+[Interactive walkthrough](https://strangepers.github.io/RoleShuttle/) · [Download the v0.1.0a14 preview](https://github.com/StrangePers/RoleShuttle/releases/tag/v0.1.0a14)
 
 Choose the model you want to talk to. Choose who does the difficult work.
 

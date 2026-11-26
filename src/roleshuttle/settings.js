@@ -1,6 +1,9 @@
 "use strict";
 
-const token = new URLSearchParams(location.hash.slice(1)).get("token");
+const navigation = new URLSearchParams(location.hash.slice(1));
+const token = navigation.get("token");
+const archiveTarget = navigation.get("archive");
+let taskTarget = navigation.get("task");
 if (token) history.replaceState(null, "", location.pathname);
 const status = document.querySelector("#status");
 const save = document.querySelector("#save");
@@ -100,7 +103,12 @@ document.querySelector("#settings").addEventListener("submit", async event => {
     save.disabled = true;
     try {
         Object.assign(current, await request({revision: current.revision, settings}));
-        status.textContent = "Settings saved.";
+        try {
+            await loadLocalCatalog();
+            status.textContent = "Settings saved.";
+        } catch {
+            status.textContent = "Settings saved. Reopen the panel before preparing a task.";
+        }
     } catch (error) {
         status.textContent = error.message;
     } finally {
@@ -140,6 +148,13 @@ function renderPreview(decision) {
                 : `${name} · ${pool.reason}`);
         }
     }
+    if (decision.saved_candidates?.length) {
+        appendText(routingResult, "h3", "Saved assignment and fallbacks");
+        const list = appendText(routingResult, "ol", "");
+        for (const candidate of decision.saved_candidates) {
+            appendText(list, "li", [candidate.provider,candidate.model_id,candidate.effort].filter(Boolean).join(" · "));
+        }
+    }
     if (!decision.alternatives.length) return;
     appendText(routingResult, "h3", "Routes considered");
     for (const row of decision.alternatives) {
@@ -167,7 +182,8 @@ routing.addEventListener("submit", async event => {
     snapshotFile.disabled = true;
     routingStatus.textContent = "Evaluating snapshot…";
     try {
-        renderPreview(await request(JSON.parse(await file.text()), "/api/recommended"));
+        renderPreview(await request(JSON.parse(await file.text()),
+            document.querySelector("#preview-advanced").checked ? "/api/advanced-preview" : "/api/recommended"));
     } catch (error) {
         routingStatus.textContent = error instanceof SyntaxError ? "The snapshot is not valid JSON." : error.message;
     } finally {
@@ -598,6 +614,9 @@ let localFingerprint;
 let localBusy = false;
 
 function displayLocalTask(task) {
+    if (localTask?.task_id !== task.task_id || task.go_closure) {
+        localField("go-close-comment").value = "";
+    }
     if (localTask?.revision !== task.revision) {
         localFingerprint = undefined;
         localField("diff").hidden = true;
@@ -610,6 +629,35 @@ function displayLocalTask(task) {
     localField("id").textContent = task.contract.title + " · " + task.task_id + base;
     localField("status").textContent = "Task status: " + task.status +
         (task.check_receipt?.passed ? " · Checks passed" : "");
+    const operation=task.model_operation;
+    if (operation?.interruption?.local_connection_closed) {
+        localField("status").textContent += " · Go connection closed locally. Provider cancellation is unconfirmed.";
+    }
+    const reconciliation = operation?.reconciliation;
+    if (reconciliation) {
+        const messages = {
+            terminal_completion: "Provider reported a terminal completion (" + reconciliation.finish_reason + ").",
+            http_error: "Provider lookup returned HTTP " + reconciliation.http_status + ".",
+            no_terminal_evidence: "Provider lookup returned no matching terminal result.",
+            unavailable: "Provider lookup was unavailable.",
+            credential_unavailable: "The Go credential is unavailable.",
+            extra_usage_unverified: "Could not confirm that Extra Usage is off. Lookup skipped.",
+            invalid_response_id: "The saved Go response ID cannot be used for lookup.",
+        };
+        localField("status").textContent += " · " + messages[reconciliation.outcome] +
+            " Checked " + new Date(reconciliation.checked_at).toLocaleString() + ".";
+    }
+    const closure = task.go_closure;
+    const closureNote = localField("go-closure");
+    closureNote.hidden = !closure;
+    closureNote.textContent = closure
+        ? "Closed manually " + new Date(closure.closed_at).toLocaleString() + "\n" + closure.comment : "";
+    const input=task.panel_input;
+    localField("route").textContent = operation ? [
+        (operation.routing_category || "medium") + " · " + operation.route,
+        operation.provider, operation.model,
+        ...(operation.skipped_routes || []).map(row => "Skipped " + row.route + " (" + row.reason + ")"),
+    ].join(" · ") : input?.candidates ? "Queued routes: " + input.candidates.map(row => row.route).join(" → ") : "";
     localField("question").textContent = task.phase === "waiting_model_input" ? task.model_operation.question : "";
     localField("message-label").hidden = !["waiting_model_input", "patch_applied"].includes(task.phase) || task.status === "accepted";
     localField("proof-label").hidden = task.contract.acceptance_mode !== "project" || task.status !== "review";
@@ -620,10 +668,17 @@ function refreshLocalControls() {
     if (!localTask) return;
     const {phase, status, contract, panel_input, model_operation} = localTask;
     const review = phase === "patch_applied";
+    const awaitingGoReview = phase === "model_unsettled" && status === "needs_review" &&
+        model_operation?.provider === "opencode_go" && model_operation.interruption?.local_connection_closed &&
+        model_operation.interruption.provider_acknowledged === false;
+    localField("go-close-label").hidden = !awaitingGoReview;
     const visible = {
         launch: panel_input && (phase === "prepared" || phase === "worktree_ready" && !model_operation),
         status: true,
-        cancel: phase === "requesting_model" && model_operation?.native_turn && !model_operation.cancel_requested_at,
+        cancel: phase === "requesting_model" &&
+            (model_operation?.native_turn || model_operation?.go_stream) && !model_operation.cancel_requested_at,
+        "reconcile-go": awaitingGoReview && model_operation.reconciliation?.outcome !== "terminal_completion",
+        "close-go": awaitingGoReview,
         answer: phase === "waiting_model_input" && panel_input,
         apply: ["worktree_ready", "model_revision_ready"].includes(phase) && model_operation?.state === "returned",
         diff: review,
@@ -644,9 +699,15 @@ function selectedLocalProject() {
     return localCatalog.projects.find(row => row.id === localField("project").value);
 }
 
+function canPrepareLocal(project) {
+    if (!project) return false;
+    return project.allowed_categories
+        ? project.allowed_categories.includes(localField("category").value)
+        : project.model_allowed;
+}
 function updateLocalProjects() {
     const project = selectedLocalProject();
-    localField("prepare").disabled = !project?.codex_allowed;
+    localField("prepare").disabled = !canPrepareLocal(project);
     localField("prepare-baseline").disabled = !project?.has_checks;
     localField("paths").replaceChildren();
     for (const path of project?.paths || []) {
@@ -661,29 +722,52 @@ async function loadLocalCatalog() {
     localCatalog = await request(undefined, "/api/local-tasks");
     if (!localCatalog.enabled) return;
     localRoot.hidden = false;
+    const category=localField("category");
+    const previousCategory=category.value || "medium";
+    category.replaceChildren(...(localCatalog.routing_categories || ["medium"]).map(value => new Option(value,value)));
+    category.value=previousCategory;
+
     const previous = localField("project").value;
     localField("project").replaceChildren(new Option("Choose a project", ""));
     for (const project of localCatalog.projects) {
         const option = new Option(project.name, project.id);
-        option.disabled = !project.codex_allowed && !project.has_checks;
+        option.disabled = !(project.allowed_categories?.length || project.model_allowed || project.has_checks);
         localField("project").add(option);
     }
     if (previous) localField("project").value = previous;
     const project = selectedLocalProject();
-    localField("prepare").disabled = !project?.codex_allowed;
+    localField("prepare").disabled = !canPrepareLocal(project);
     localField("prepare-baseline").disabled = !project?.has_checks;
     const history = localField("history");
     history.hidden = !localCatalog.history;
     if (localCatalog.history) history.href = localCatalog.history;
-    localField("model").textContent = "Codex " + localCatalog.assignment.model_id + " · " + localCatalog.assignment.effort;
+    const {assignment, configured_assignment: configured} = localCatalog;
+    const execution = assignment.provider === "opencode_go"
+        ? `Autonomous execution: OpenCode Go ${assignment.model_id}.`
+        : `Autonomous execution: Codex ${assignment.model_id} · ${assignment.effort}.`;
+    if (configured?.provider === "opencode_go" && assignment.provider !== "opencode_go") {
+        localField("model").textContent = `Saved implementer: OpenCode Go ${configured.model_id}. ${execution} OpenCode Go credential is unavailable to RoleShuttle.`;
+    } else {
+        localField("model").textContent = localCatalog.ordered_routing
+            ? "Ordered routing enabled. " + execution.replace("Autonomous execution:", "Base assignment:")
+            : execution;
+    }
     localField("records").replaceChildren(new Option("Open a task", ""));
     for (const task of localCatalog.tasks) {
         localField("records").add(new Option(task.title + " · " + task.status, task.id));
     }
     if (localTask) localField("records").value = localTask.task_id;
+    if (taskTarget && /^[0-9a-f]{32}$/.test(taskTarget)) {
+        localField("records").value = taskTarget;
+        taskTarget = null;
+        if (localField("records").value) localField("records").dispatchEvent(new Event("change"));
+    }
 }
 
 localField("project").addEventListener("change", updateLocalProjects);
+localField("category").addEventListener("change", () => {
+    localField("prepare").disabled = !canPrepareLocal(selectedLocalProject());
+});
 localField("records").addEventListener("change", async event => {
     const taskId = event.target.value;
     if (!taskId) return;
@@ -692,17 +776,17 @@ localField("records").addEventListener("change", async event => {
 });
 localField("form").addEventListener("submit", async event => {
     event.preventDefault();
-    if (!selectedLocalProject()?.codex_allowed) return;
+    if (!canPrepareLocal(selectedLocalProject())) return;
     const button = event.submitter;
     button.disabled = true;
     try {
         const paths = [...localField("paths").querySelectorAll(":checked")].map(field => field.value);
         displayLocalTask(await request({project_id: localField("project").value, title: localField("task-title").value,
             prompt: localField("input").value, allowed_paths: paths, assignment: localCatalog.assignment,
-            request_id: crypto.randomUUID()}, "/api/local/prepare"));
+            category: localField("category").value, request_id: crypto.randomUUID()}, "/api/local/prepare"));
         await loadLocalCatalog();
     } catch (error) { localField("status").textContent = error.message; }
-    finally { button.disabled = !selectedLocalProject()?.codex_allowed; }
+    finally { button.disabled = !canPrepareLocal(selectedLocalProject()); }
 });
 localField("prepare-baseline").addEventListener("click", async event => {
     const button = event.currentTarget;
@@ -717,14 +801,22 @@ localField("prepare-baseline").addEventListener("click", async event => {
 localField("actions").addEventListener("click", async event => {
     const action = event.target.dataset.action;
     if (!action || !localTask) return;
+    const exclusive = !["status", "cancel"].includes(action);
+    if (exclusive && localBusy) return;
     const taskId = localTask.task_id;
     const operation = localTask.model_operation;
     const body = {task_id: taskId, fingerprint: localFingerprint, operation_id: operation?.id,
                   message: localField("message").value};
     if (action === "check-log") Object.assign(body, localTask.last_check_log);
+    if (action === "close-go") {
+        const comment = localField("go-close-comment");
+        comment.setCustomValidity(comment.value.trim() ? "" : "Enter a closure comment.");
+        if (!comment.reportValidity()) return;
+        body.comment = comment.value.trim();
+    }
     try {
         if (action === "accept" && localField("proof").value.trim()) body.proof = JSON.parse(localField("proof").value);
-        localBusy = !["status", "cancel"].includes(action);
+        if (exclusive) localBusy = true;
         refreshLocalControls();
         const result = await request(body, "/api/local/" + action);
         if (localTask?.task_id !== taskId) return;
@@ -745,7 +837,10 @@ localField("actions").addEventListener("click", async event => {
             if (action !== "status") await loadLocalCatalog();
         }
     } catch (error) { localField("status").textContent = error.message; }
-    finally { localBusy = false; refreshLocalControls(); }
+    finally {
+        if (exclusive) localBusy = false;
+        refreshLocalControls();
+    }
 });
 setInterval(async () => {
     if (!localTask || (!localBusy && !localTask.active)) return;
@@ -755,4 +850,165 @@ setInterval(async () => {
         if (localTask?.task_id === taskId && task.revision !== localTask.revision) displayLocalTask(task);
     } catch { /* The explicit Refresh action reports errors. */ }
 }, 850);
-loadLocalCatalog().catch(error => { if (!localRoot.hidden) localField("status").textContent = error.message; });
+const archiveTasks = document.querySelector("#archive-tasks");
+const archiveStatus = document.querySelector("#archive-status");
+const archiveCard = document.querySelector("#archive-card");
+
+async function loadArchive() {
+    const archive = document.querySelector("#r28-archive");
+    try {
+        const {items} = await request({}, "/api/local/archive-list");
+        if (!items.length) return;
+        archiveTasks.replaceChildren(new Option("Open an archived task", ""));
+        for (const item of items) {
+            archiveTasks.add(new Option(item.title + " · " + item.status, item.task_id));
+        }
+        archive.hidden = false;
+        if (archiveTarget && /^[0-9a-f]{32}$/.test(archiveTarget)) {
+            archiveTasks.value = archiveTarget;
+            if (archiveTasks.value) archiveTasks.dispatchEvent(new Event("change"));
+            else archiveStatus.textContent = "Archived task not found.";
+        }
+    } catch (error) {
+        archive.hidden = false;
+        archiveTasks.disabled = true;
+        archiveStatus.textContent = error.message;
+    }
+}
+
+archiveTasks.addEventListener("change", async () => {
+    const taskId = archiveTasks.value;
+    archiveCard.hidden = true;
+    archiveStatus.textContent = "";
+    if (!taskId) return;
+    try {
+        const task = await request({task_id: taskId}, "/api/local/archive-card");
+        if (archiveTasks.value !== taskId) return;
+        document.querySelector("#archive-card-title").textContent = task.title;
+        document.querySelector("#archive-card-id").textContent = task.task_id + " · " + task.status;
+        document.querySelector("#archive-receipts").textContent = task.receipts.length
+            ? JSON.stringify(task.receipts, null, 2) : "No attempt receipts were saved.";
+        document.querySelector("#archive-diff-status").textContent =
+            task.diff?.truncated ? "The saved diff is truncated." : "";
+        document.querySelector("#archive-diff").textContent =
+            task.diff ? task.diff.diff || "No changes in the saved diff." : "No saved diff is available.";
+        archiveCard.hidden = false;
+    } catch (error) {
+        if (archiveTasks.value === taskId) archiveStatus.textContent = error.message;
+    }
+});
+
+loadLocalCatalog()
+    .then(() => { if (localCatalog.enabled) return loadArchive(); })
+    .catch(error => { if (!localRoot.hidden) localField("status").textContent = error.message; });
+
+const advancedField = name => document.getElementById("advanced-" + name);
+const advancedSection = document.getElementById("advanced-settings");
+let advancedCurrent;
+function displayAdvanced(settings) {
+    for (const [id, key] of [["routes", "routes"], ["route-catalog", "route_catalog"],
+                             ["fallbacks", "fallbacks"], ["local-servers", "local_servers"]]) {
+        advancedField(id).value = JSON.stringify(settings[key], null, 2);
+    }
+    advancedField("health").value = settings.timeouts.local_health_seconds;
+    advancedField("task-default").value = settings.timeouts.task_default_seconds;
+    advancedField("task-max").value = settings.timeouts.task_max_seconds;
+    advancedField("go-restrict").checked = settings.go_models !== null;
+    advancedField("go-models").value = (settings.go_models || []).join("\n");
+}
+function updateAdvanced(current) {
+    advancedCurrent = current;
+    displayAdvanced(current.settings);
+    const older = current.history.filter(item => item.revision !== current.revision);
+    advancedField("revisions").replaceChildren(...older.map(item =>
+        new Option(item.saved_at + " · " + item.revision.slice(0, 8), item.revision)));
+    advancedField("local-selected").replaceChildren(...current.settings.local_servers.map(item =>
+        new Option(item.id,item.id)));
+    advancedField("local-refresh").disabled = !current.settings.local_servers.length;
+    advancedField("save").disabled = false;
+    advancedField("restore").disabled = !older.length;
+}
+async function reloadAdvanced() {
+    try {
+        updateAdvanced(await request(undefined, "/api/advanced-settings"));
+        advancedField("status").textContent = "Saved advanced settings loaded.";
+    } catch (error) {
+        advancedField("status").textContent = error.message;
+    }
+}
+advancedSection.addEventListener("toggle", () => {
+    if (advancedSection.open && !advancedCurrent) reloadAdvanced();
+});
+advancedField("reload").addEventListener("click", reloadAdvanced);
+advancedField("preview-import").addEventListener("click", async () => {
+    const file = advancedField("import").files[0];
+    try {
+        if (!file || file.size > 65_536) throw new Error("Choose an offline import file up to 64 KiB.");
+        displayAdvanced(JSON.parse(await file.text()));
+        advancedField("status").textContent = "Import loaded into the draft. Save to apply it.";
+    } catch (error) { advancedField("status").textContent = error.message; }
+});
+async function writeAdvanced(body, message) {
+    const saveButton = advancedField("save");
+    const restoreButton = advancedField("restore");
+    saveButton.disabled = restoreButton.disabled = true;
+    try {
+        updateAdvanced(await request({revision: advancedCurrent.revision, ...body}, "/api/advanced-settings"));
+        advancedField("status").textContent = message;
+    } catch (error) {
+        advancedField("status").textContent = error.message;
+    } finally {
+        saveButton.disabled = !advancedCurrent;
+        restoreButton.disabled = !advancedField("revisions").options.length;
+    }
+}
+advancedField("save").addEventListener("click", async () => {
+    try {
+        const parse = name => JSON.parse(advancedField(name).value);
+        const settings = {routes: parse("routes"), route_catalog: parse("route-catalog"),
+            fallbacks: parse("fallbacks"), local_servers: parse("local-servers"),
+            timeouts: {local_health_seconds: Number(advancedField("health").value),
+                task_default_seconds: Number(advancedField("task-default").value),
+                task_max_seconds: Number(advancedField("task-max").value)},
+            go_models: advancedField("go-restrict").checked ?
+                advancedField("go-models").value.split(/\r?\n/).map(value => value.trim()).filter(Boolean) : null};
+        await writeAdvanced({settings}, "Advanced settings saved.");
+    } catch (error) { advancedField("status").textContent = error.message; }
+});
+advancedField("restore").addEventListener("click", () => {
+    writeAdvanced({restore: advancedField("revisions").value}, "Advanced settings restored.");
+});
+advancedField("go-refresh").addEventListener("click", async () => {
+    const button = advancedField("go-refresh");
+    button.disabled = true;
+    try {
+        const status = await request({}, "/api/advanced-go-status");
+        if (!status.configured) {
+            advancedField("go-status").textContent = "OpenCode Go credential unavailable.";
+        } else {
+            const quota = Object.entries(status.quota).map(([window, meter]) =>
+                window + ": " + meter.percent + "% used (" + meter.status + ")");
+            advancedField("go-status").textContent = [
+                status.extra_usage_off ? "Extra Usage is off." : "Extra Usage off is unconfirmed.",
+                ...quota, "Discovered models:", ...status.models,
+            ].join("\n");
+        }
+    } catch (error) { advancedField("go-status").textContent = error.message; }
+    finally { button.disabled = false; }
+});
+
+
+advancedField("local-refresh").addEventListener("click", async () => {
+    const button = advancedField("local-refresh");
+    button.disabled = true;
+    const output = advancedField("local-status");
+    try {
+        const status = await request({server_id: advancedField("local-selected").value}, "/api/advanced-local-status");
+        output.textContent = status.available ? [
+            "Connected.", ...status.models.map(model => [model.id,
+              model.loaded ? "loaded" : model.loading ? "loading" : "available",
+              model.allowed ? "allowed" : "outside saved list"].join(" · ")),
+        ].join("\n") : status.reason;
+    } catch (error) { output.textContent = error.message; }
+    finally { button.disabled = !advancedField("local-selected").options.length; }
+});

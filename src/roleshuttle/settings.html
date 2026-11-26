@@ -16,7 +16,7 @@
   button { cursor: pointer; }
   #routing-result { overflow-wrap: anywhere; }
   #routing-result li { margin-block: .25rem; }
-  #console-diff, #local-diff, #local-check-log { overflow: auto; max-height: 32rem; padding: 1rem; border: 1px solid gray; }
+  #console-diff, #local-diff, #local-check-log, #archive-receipts, #archive-diff { overflow: auto; max-height: 32rem; padding: 1rem; border: 1px solid gray; }
   #console-review, #local-id { overflow-wrap: anywhere; }
   :focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
   @media (max-width: 700px) { .row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -32,6 +32,7 @@
         <legend>New task</legend>
         <div class="controls">
           <label>Project <select id="local-project" required></select></label>
+          <label>Routing category <select id="local-category"></select></label>
           <label>Task title <input id="local-task-title" maxlength="160" required></label>
         </div>
         <div id="local-paths"></div>
@@ -45,12 +46,17 @@
     <div id="local-controls" hidden>
       <p id="local-id"></p>
       <p id="local-question"></p>
+      <p id="local-route" role="status"></p>
+      <pre id="local-go-closure" hidden></pre>
+      <label id="local-go-close-label" hidden>Closure comment <textarea id="local-go-close-comment" rows="3" maxlength="4096" required></textarea></label>
       <label id="local-message-label" hidden>Answer or revision comment <textarea id="local-message" rows="3" maxlength="4096"></textarea></label>
       <label id="local-proof-label" hidden>Project acceptance evidence JSON <textarea id="local-proof" rows="3"></textarea></label>
       <div class="actions" id="local-actions">
         <button type="button" data-action="launch" hidden>Launch on Codex</button>
         <button type="button" data-action="status">Refresh task</button>
         <button type="button" data-action="cancel" hidden>Stop active request</button>
+        <button type="button" data-action="reconcile-go" hidden>Check Go outcome</button>
+        <button type="button" data-action="close-go" hidden>Close Go task manually</button>
         <button type="button" data-action="answer" hidden>Send answer</button>
         <button type="button" data-action="apply" hidden>Apply model patch</button>
         <button type="button" data-action="diff" hidden>Review diff</button>
@@ -62,6 +68,20 @@
       </div>
       <pre id="local-diff" hidden></pre>
       <pre id="local-check-log" tabindex="0" hidden></pre>
+    </div>
+  </section>
+  <section id="r28-archive" aria-labelledby="archive-title" hidden>
+    <h2 id="archive-title">Local Agent Console r28 archive</h2>
+    <label>Archived task <select id="archive-tasks"></select></label>
+    <p id="archive-status" role="status"></p>
+    <div id="archive-card" hidden>
+      <h3 id="archive-card-title"></h3>
+      <p id="archive-card-id"></p>
+      <h4>Saved receipts</h4>
+      <pre id="archive-receipts"></pre>
+      <h4>Saved diff</h4>
+      <p id="archive-diff-status"></p>
+      <pre id="archive-diff" tabindex="0"></pre>
     </div>
   </section>
   <section id="console-tasks" aria-labelledby="console-title" hidden>
@@ -145,12 +165,49 @@
     </div>
   </form>
   <p id="status" role="status" aria-live="polite"></p>
+  <details id="advanced-settings">
+    <summary>Advanced settings</summary>
+    <p>Tasks use the saved route order and check reserves before sending a model request. Go admission and connection timeouts apply to new Go requests.</p>
+    <fieldset>
+      <legend>Routing</legend>
+      <label>Route order by category <textarea id="advanced-routes" rows="6" spellcheck="false"></textarea></label>
+      <label>Route catalog <textarea id="advanced-route-catalog" rows="6" spellcheck="false"></textarea></label>
+      <label>Ordered fallback models <textarea id="advanced-fallbacks" rows="5" spellcheck="false"></textarea></label>
+      <label>Health timeout (seconds) <input id="advanced-health" type="number" min="1" max="86400"></label>
+      <label>Default task timeout (seconds) <input id="advanced-task-default" type="number" min="1" max="86400"></label>
+      <label>Maximum task timeout (seconds) <input id="advanced-task-max" type="number" min="1" max="86400"></label>
+    </fieldset>
+    <fieldset>
+      <legend>OpenCode Go</legend>
+      <label><input id="advanced-go-restrict" type="checkbox"> Restrict Go to listed models</label>
+      <label>Allowed Go models, one per line <textarea id="advanced-go-models" rows="5" spellcheck="false"></textarea></label>
+      <button id="advanced-go-refresh" type="button">Check subscription and catalog</button>
+      <pre id="advanced-go-status" role="status"></pre>
+    </fieldset>
+    <fieldset>
+      <legend>Local servers</legend>
+      <label>Registered addresses and models <textarea id="advanced-local-servers" rows="5" spellcheck="false"></textarea></label>
+      <label>Server to check <select id="advanced-local-selected"></select></label>
+      <button id="advanced-local-refresh" type="button" disabled>Check local connection</button>
+      <pre id="advanced-local-status" role="status"></pre>
+      <p>Mesh retains credentials and local execution.</p>
+    </fieldset>
+    <label>Offline import file <input id="advanced-import" type="file" accept=".json,application/json"></label>
+    <button id="advanced-preview-import" type="button">Preview import</button>
+    <button id="advanced-save" type="button" disabled>Save advanced settings</button>
+    <button id="advanced-reload" type="button">Reload saved advanced settings</button>
+    <label>Earlier revision <select id="advanced-revisions"></select></label>
+    <button id="advanced-restore" type="button" disabled>Restore selected revision</button>
+    <p id="advanced-status" role="status" aria-live="polite"></p>
+  </details>
+
   <section aria-labelledby="routing-title">
     <h2 id="routing-title">Recommended preview</h2>
     <p>Choose a saved routing snapshot. The preview uses its recorded time and observations. It cannot launch a task.</p>
     <form id="routing">
       <div class="controls">
         <label>Routing snapshot <input id="snapshot" type="file" accept=".json,application/json" required></label>
+        <label><input id="preview-advanced" type="checkbox"> Use saved advanced routing</label>
         <button id="preview" type="submit">Preview route</button>
       </div>
     </form>
