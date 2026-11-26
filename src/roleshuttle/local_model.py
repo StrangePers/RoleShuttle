@@ -224,8 +224,10 @@ def request_patch(task_id, prompt, snapshot, *, question_id=None, answer=None, c
         try:
             if go:
                 response = stage.complete(task_id, operation["model"], sent_prompt,
-                    on_active=lambda identity: record_go_activity(task_id,operation["id"],identity),
-                    cancel_requested=lambda: go_cancel_requested(task_id,operation["id"]))
+                    on_active=lambda identity: record_go_activity(task_id, operation["id"], identity),
+                    cancel_requested=lambda: go_cancel_requested(task_id, operation["id"]),
+                    on_request=lambda log_id: record_go_request(
+                        task_id, operation["id"], log_id, advanced["settings"]["go_console_workspace"]))
             elif mesh:
                 response = stage.complete(task_id, operation["model"], sent_prompt)
             else:
@@ -284,6 +286,18 @@ def native_cancellation(task_id, operation_id, thread, turn, active):
         native = {"thread_id": thread, "turn_id": turn, "provider_active_at": stamp()}
         update_task(db, current, model_operation={**operation, "native_turn": native})
         return "cancel_requested_at" in operation
+
+
+def record_go_request(task_id, operation_id, log_id, workspace):
+    with database(write=True) as db:
+        task = load_task(db, task_id)
+        operation = task.get("model_operation") or {}
+        if (task["phase"] != "requesting_model" or operation.get("id") != operation_id
+                or operation.get("provider") != "opencode_go" or "go_request" in operation):
+            raise ValueError("Go request log no longer matches the active operation")
+        update_task(db, task, model_operation={
+            **operation, "go_request": {"log_id": log_id, "workspace": workspace},
+        })
 
 
 def record_go_activity(task_id, operation_id, response_id):

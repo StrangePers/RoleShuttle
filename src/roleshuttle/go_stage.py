@@ -189,7 +189,7 @@ class GoStage:
 
         self.authorized_at = time.monotonic()
 
-    def stream_request(self, body, session, model, on_active, cancel_requested):
+    def stream_request(self, body, session, model, on_active, cancel_requested, *, on_request=None):
         target=urlsplit(COMPLETIONS)
         connection=HTTPSConnection(target.hostname,timeout=self.task_timeout)
         active, done, disconnected, terminal=Event(),Event(),Event(),Event()
@@ -228,6 +228,11 @@ class GoStage:
                 raise ValueError("OpenCode Go connection was unavailable")
             watcher=Thread(target=watch,args=(sock,),daemon=True)
             with connection.getresponse() as response:
+                log_id = response.getheader("x-opencode-log-id", "")
+                if on_request and re.fullmatch(
+                    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", log_id, re.IGNORECASE
+                ):
+                    on_request(log_id.lower())
                 if response.status!=200 or response.getheader("Content-Type","").split(";",1)[0]!="text/event-stream":
                     raise ValueError("OpenCode Go did not return a successful event stream")
                 watcher.start()
@@ -250,7 +255,7 @@ class GoStage:
 
 
 
-    def complete(self, task_id, model, prompt, *, on_active=None, cancel_requested=None):
+    def complete(self, task_id, model, prompt, *, on_active=None, cancel_requested=None, on_request=None):
         authorized = self.authorized_at
         self.authorized_at = None
         if authorized is None or time.monotonic() - authorized > 15:
@@ -261,7 +266,7 @@ class GoStage:
             value=self.request(COMPLETIONS,body,task_id)
         else:
             body["stream_options"]={"include_usage":True}
-            value=self.stream_request(body,task_id,model,on_active,cancel_requested)
+            value = self.stream_request(body, task_id, model, on_active, cancel_requested, on_request=on_request)
         try:
             usage = value["usage"]
             billing = usage["opencode"]["billing_source"]

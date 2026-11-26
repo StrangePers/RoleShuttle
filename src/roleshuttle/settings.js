@@ -633,6 +633,21 @@ function displayLocalTask(task) {
     if (operation?.interruption?.local_connection_closed) {
         localField("status").textContent += " · Go connection closed locally. Provider cancellation is unconfirmed.";
     }
+    const goRequest = operation?.provider === "opencode_go" ? operation.go_request : undefined;
+    const hasRequest = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(goRequest?.log_id || "");
+    const hasWorkspace = hasRequest && /^wrk_[A-Za-z0-9]{1,80}$/.test(goRequest.workspace || "");
+    localField("go-request").hidden = !hasRequest;
+    localField("go-request-id").textContent = hasRequest ? goRequest.log_id : "";
+    localField("go-request-hint").hidden = !hasRequest || hasWorkspace;
+    const goLink = localField("go-request-link");
+    goLink.hidden = !hasWorkspace;
+    if (hasWorkspace) {
+        const url = new URL("/console/" + goRequest.workspace + "/activity/logs", "https://opencode.ai");
+        url.searchParams.set("log", goRequest.log_id);
+        goLink.href = url.href;
+    } else {
+        goLink.removeAttribute("href");
+    }
     const reconciliation = operation?.reconciliation;
     if (reconciliation) {
         const messages = {
@@ -915,6 +930,7 @@ function displayAdvanced(settings) {
     advancedField("task-max").value = settings.timeouts.task_max_seconds;
     advancedField("go-restrict").checked = settings.go_models !== null;
     advancedField("go-models").value = (settings.go_models || []).join("\n");
+    advancedField("go-workspace").value = settings.go_console_workspace || "";
 }
 function updateAdvanced(current) {
     advancedCurrent = current;
@@ -970,6 +986,7 @@ advancedField("save").addEventListener("click", async () => {
             timeouts: {local_health_seconds: Number(advancedField("health").value),
                 task_default_seconds: Number(advancedField("task-default").value),
                 task_max_seconds: Number(advancedField("task-max").value)},
+            go_console_workspace: advancedField("go-workspace").value.trim(),
             go_models: advancedField("go-restrict").checked ?
                 advancedField("go-models").value.split(/\r?\n/).map(value => value.trim()).filter(Boolean) : null};
         await writeAdvanced({settings}, "Advanced settings saved.");
