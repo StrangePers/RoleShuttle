@@ -357,12 +357,18 @@ class LocalExecutionTests(unittest.TestCase):
         self.assertEqual((linked / "src/allowed.txt").read_bytes(), b"before\n")
 
         checks = [{key: value for key, value in check.items() if key != "executable_sha256"}]
-        register_project({**parent, "checks": checks, "automatic_cloud": [],
+        updated_parent = register_project({**parent, "checks": checks, "automatic_cloud": [],
                           "extra_usage_allowed": False, "extra_usage_default": False},
                          migrated["source_project"]["revision"])
         with self.assertRaisesRegex(ValueError, "current authorized source project"):
             prepare_task({**self.contract, "project_id": "imported-linked"})
-        rebound = resolve_project(linked)
+        with self.assertRaisesRegex(ValueError, "Explicitly re-register"):
+            resolve_project(linked)
+        rebound = register_project({
+            **child, "checks": checks, "automatic_cloud": [],
+            "extra_usage_allowed": False, "extra_usage_default": False,
+            "source_project": {"id": updated_parent["id"], "revision": updated_parent["revision"]},
+        }, migrated["revision"])
         self.assertNotEqual(rebound["source_project"]["revision"], migrated["source_project"]["revision"])
         self.assertEqual(rebound["automatic_cloud"], [])
 
