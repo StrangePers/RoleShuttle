@@ -27,6 +27,25 @@
   <section id="local-tasks" aria-labelledby="local-title" hidden>
     <h2 id="local-title">Autonomous RoleShuttle tasks</h2>
     <p>Extra Usage is off. <span id="local-model"></span> <a id="local-history" hidden>Agent Console r28 history</a></p>
+    <form id="local-registration-form">
+      <fieldset>
+        <legend>Register a project</legend>
+        <label>Checkout path <input name="path" required></label>
+        <label>Project ID <input name="projectId" required></label>
+        <label>Allowed write paths, one per line <textarea name="allowedPaths" rows="3"></textarea></label>
+        <label><input type="checkbox" name="worktreesAllowed"> Allow linked worktrees</label>
+        <label><input type="checkbox" name="sharedMacAllowed"> Allow shared Mac</label>
+        <label><input type="checkbox" name="externalCodeAllowed"> Allow external code access</label>
+        <label><input type="checkbox" name="codex"> Allow automatic Codex routing (requires external code access)</label>
+        <label><input type="checkbox" name="opencodeGo"> Allow automatic OpenCode Go routing (requires external code access)</label>
+        <button type="submit">Preview project</button>
+      </fieldset>
+      <pre id="local-registration-summary" hidden></pre>
+      <label><input id="local-registration-consent" type="checkbox" disabled> I approve the previewed project and permissions</label>
+      <button id="local-registration-confirm" type="button" disabled>Register project</button>
+      <button id="local-registration-cancel" type="button">Cancel</button>
+      <p id="local-registration-status" role="status"></p>
+    </form>
     <form id="local-form">
       <fieldset>
         <legend>New task</legend>

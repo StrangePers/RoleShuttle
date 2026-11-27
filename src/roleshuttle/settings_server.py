@@ -1,14 +1,18 @@
 """Serve the standalone model settings panel on a local authenticated listener."""
 
 import hmac
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from importlib.resources import files
 import json
 import secrets
+from socket import SHUT_RDWR
 import sqlite3
+from threading import Thread, Timer
+from time import monotonic
 import webbrowser
 
-from . import advanced_settings, local_panel
+from . import advanced_settings, checkout_page, local_panel, project_registration
+from .local_tasks import discover_project
 from .model_settings import EFFORTS, LANES, PROVIDERS, ROLES, RevisionConflict
 from .model_settings import preset_assignments, read_settings, save_settings
 from .recommended import preview_snapshot
@@ -25,6 +29,9 @@ PROJECTS_PATH = "/api/console-projects"
 LOCAL_PATH = "/api/local-tasks"
 LOCAL_ACTIONS = {f"/api/local/{name}": name for name in local_panel.ACTIONS}
 POST_LIMITS.update({path: 65_536 for path in LOCAL_ACTIONS})
+PROJECT_REGISTRATION_ACTIONS = {"/api/local/project-preview": "preview",
+                                "/api/local/project-confirm": "confirm"}
+POST_LIMITS.update({path: 16_384 for path in PROJECT_REGISTRATION_ACTIONS})
 
 
 class SettingsHandler(BaseHTTPRequestHandler):
@@ -107,6 +114,13 @@ class SettingsHandler(BaseHTTPRequestHandler):
             if self.headers.get_content_type() != "application/json" or not 0 < size <= POST_LIMITS[self.path]:
                 raise ValueError("Expected a bounded JSON request")
             request = json.loads(self.rfile.read(size))
+            if self.path in PROJECT_REGISTRATION_ACTIONS:
+                if not self.server.autonomous_tasks:
+                    self.json_reply(404, {"error": "Autonomous tasks are unavailable"})
+                    return
+                action = PROJECT_REGISTRATION_ACTIONS[self.path]
+                self.json_reply(200, getattr(self.server.project_registration, action)(request))
+                return
             if self.path in LOCAL_ACTIONS:
                 if not self.server.autonomous_tasks:
                     self.json_reply(404, {"error": "Autonomous tasks are unavailable"})
@@ -158,14 +172,121 @@ class SettingsHandler(BaseHTTPRequestHandler):
 
 
 class SettingsServer(ThreadingHTTPServer):
+    handler = SettingsHandler
     def __init__(self, port, *, console_tasks=None, autonomous_tasks=False, history_url=None):
-        super().__init__(("127.0.0.1", port), SettingsHandler)
+        super().__init__(("127.0.0.1", port), self.handler)
         self.authority = f"127.0.0.1:{self.server_port}"
         self.origin = "http://" + self.authority
         self.token = secrets.token_urlsafe(32)
         self.console_tasks = console_tasks
         self.autonomous_tasks = autonomous_tasks
+        self.project_registration = project_registration.ProjectRegistration()
         self.history_url = history_url
+
+
+CHECKOUT_PREFILL = "/api/checkout"
+CHECKOUT_CANCEL = "/api/checkout/cancel"
+CHECKOUT_TIMEOUT = 300
+
+
+class CheckoutHandler(SettingsHandler):
+    def checkout_allowed(self, *, write=False):
+        if (self.headers.get("Host") != self.server.authority
+                or not hmac.compare_digest(self.headers.get("Authorization", "").encode("latin-1"),
+                                           b"Bearer " + self.server.token.encode("ascii"))
+                or write and self.headers.get("Origin") != self.server.origin):
+            self.json_reply(403, {"error": "Open this page from RoleShuttle"})
+            return False
+        if self.server.result is not None or monotonic() >= self.server.deadline:
+            self.json_reply(410, {"error": "This registration session has ended"})
+            return False
+        return True
+
+    def do_GET(self):
+        if self.headers.get("Host") != self.server.authority:
+            self.json_reply(403, {"error": "Unexpected local host"})
+        elif self.path == "/":
+            self.reply(200, checkout_page.HTML, "text/html; charset=utf-8")
+        elif self.path == "/checkout.js":
+            self.reply(200, checkout_page.JS, "text/javascript; charset=utf-8")
+        elif self.path == CHECKOUT_PREFILL:
+            if self.checkout_allowed():
+                self.json_reply(200, self.server.prefill)
+        else:
+            self.json_reply(404, {"error": "Page unavailable"})
+
+    def do_POST(self):
+        if not self.checkout_allowed(write=True):
+            return
+        if self.path != CHECKOUT_CANCEL and self.path not in PROJECT_REGISTRATION_ACTIONS:
+            self.json_reply(404, {"error": "Page unavailable"})
+            return
+        try:
+            size = int(self.headers.get("Content-Length", "0"))
+            if self.headers.get_content_type() != "application/json" or not 0 < size <= POST_LIMITS.get(self.path, 64):
+                raise ValueError("Expected a bounded JSON request")
+            body = self.rfile.read(size)
+            if len(body) != size:
+                raise ValueError("Incomplete request body")
+            request = json.loads(body)
+            if monotonic() >= self.server.deadline:
+                self.json_reply(410, {"error": "This registration session has ended"})
+                return
+            if self.path == CHECKOUT_CANCEL:
+                if request != {}:
+                    raise ValueError("Expected an empty cancellation request")
+                response = self.server.result = {"status": "CANCELLED"}
+            elif PROJECT_REGISTRATION_ACTIONS[self.path] == "preview":
+                response = self.server.project_registration.preview(request, expected_root=self.server.prefill["path"])
+            else:
+                response = self.server.result = self.server.project_registration.confirm(request)
+        except ValueError as error:
+            self.json_reply(400, {"error": str(error)})
+        except (OSError, sqlite3.Error):
+            self.json_reply(409, {"error": "Cannot complete project registration"})
+        else:
+            self.json_reply(200, response)
+
+
+class CheckoutServer(SettingsServer):
+    handler = CheckoutHandler
+
+    def process_request(self, request, client_address):
+        def stop_socket():
+            try:
+                request.shutdown(SHUT_RDWR)
+            except OSError:
+                pass
+
+        # A socket timeout alone allows continual trickle traffic to extend reads.
+        timer = Timer(min(CheckoutHandler.timeout, max(0, self.deadline - monotonic())), stop_socket)
+        timer.daemon = True
+        timer.start()
+        try:
+            HTTPServer.process_request(self, request, client_address)
+        finally:
+            timer.cancel()
+
+
+def register_checkout(root):
+    """Register the caller's canonical checkout and return its project or terminal status."""
+    with CheckoutServer(0) as server:
+        server.prefill = {"path": root, "id": "checkout-" + secrets.token_hex(4)}
+        discovery = discover_project(root)
+        if discovery.get("status") == "RESOLVED" and discovery.get("resolution") == "inherited":
+            server.prefill["inherited"] = True
+            server.prefill["source_project_id"] = discovery["profile"]["source_project"]["id"]
+        server.result = None
+        server.deadline = monotonic() + CHECKOUT_TIMEOUT
+        url = server.origin + "/#token=" + server.token
+        Thread(target=webbrowser.open, args=(url,), daemon=True).start()
+        try:
+            while server.result is None and (remaining := server.deadline - monotonic()) > 0:
+                server.timeout = remaining
+                server.handle_request()
+        except KeyboardInterrupt:
+            return server.result if server.result is not None else {"status": "CANCELLED"}
+        return server.result if server.result is not None else {"status": "EXPIRED"}
 
 
 def serve_settings(port, *, autonomous_tasks=False):

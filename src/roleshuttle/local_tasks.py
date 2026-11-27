@@ -8,6 +8,7 @@ import hashlib
 from pathlib import Path
 import re
 import sqlite3
+from subprocess import CalledProcessError
 from uuid import uuid4
 
 from .check_runner import executable_hash
@@ -182,7 +183,8 @@ def normalize_project(values, *, imported=False):
     return canonical
 
 
-def register_project(values, revision, *, retain_check_pins=False):
+def register_project(values, revision, *, retain_check_pins=False, unique_checkout=False,
+                     expected_head=None, confirmed_inherited=False):
     canonical = normalize_project(values, imported=retain_check_pins)
     project_id = canonical["id"]
     with database(write=True) as db:
@@ -190,7 +192,28 @@ def register_project(values, revision, *, retain_check_pins=False):
         current = json.loads(row[0]) if row else None
         if (current["revision"] if current else "empty") != revision:
             raise ValueError("Project revision changed. Read it again before registering.")
-        validate_project_checkout(db, canonical)
+        if unique_checkout:
+            root = Path(canonical["repository"])
+            git_root = Path(os.fsdecode(_git(root, "rev-parse", "--show-toplevel").removesuffix(b"\n"))).resolve()
+            git_dir = Path(os.fsdecode(_git(root, "rev-parse", "--absolute-git-dir").removesuffix(b"\n"))).resolve()
+            shared = common_dir(root)
+            if root != Path(values["repository"]) or root != git_root:
+                raise ValueError("The previewed checkout is no longer the selected Git root.")
+            if confirmed_inherited:
+                status, discovery = _discover_registered(db, root, shared, git_dir != shared)
+                if (status != "RESOLVED" or discovery.get("resolution") != "inherited"
+                        or discovery["profile"]["source_project"] != canonical.get("source_project")):
+                    raise ValueError("The checkout or source project changed. Create a new preview.")
+            elif git_dir != shared:
+                raise ValueError("The previewed checkout is no longer an ordinary Git root.")
+            if current is not None:
+                raise ValueError("Project ID is already registered.")
+            for stored, in db.execute("SELECT record FROM projects"):
+                if Path(json.loads(stored)["repository"]).resolve() == root:
+                    raise ValueError("This checkout is already registered.")
+        base = validate_project_checkout(db, canonical)
+        if expected_head is not None and base != expected_head:
+            raise ValueError("The checkout HEAD changed. Create a new preview.")
         if current and all(current.get(key, [] if key == "checks" else None) == value
                            for key, value in canonical.items()):
             return current
@@ -203,6 +226,106 @@ def register_project(values, revision, *, retain_check_pins=False):
 def show_project(project_id):
     with database() as db:
         return load_project(db, project_id, validate=False)
+
+
+def _discover_registered(db, root, shared, linked):
+    profiles = [json.loads(row[0]) for row in db.execute("SELECT record FROM projects ORDER BY id")]
+    exact = [project for project in profiles if Path(project["repository"]) == root]
+    if len(exact) > 1:
+        return "PROFILE_AMBIGUOUS", {"candidates": [project["id"] for project in exact]}
+    if exact:
+        project = exact[0]
+        try:
+            source = project.get("source_project")
+            if source:
+                if not linked:
+                    raise ValueError("An inherited profile requires a linked worktree")
+                load_project(db, source["id"])
+            validate_project_checkout(db, project)
+        except (ValueError, OSError, RuntimeError, CalledProcessError, KeyError, TypeError):
+            return "PROFILE_INVALID", {"project_id": project["id"], "revision": project.get("revision")}
+        return "RESOLVED", {"resolution": "exact", "profile": project}
+    if not linked:
+        return "PROFILE_MISSING", {}
+
+    candidates = []
+    for parent in profiles:
+        if parent.get("source_project") or parent.get("worktrees_allowed") is not True:
+            continue
+        try:
+            parent_root = Path(parent["repository"])
+            if parent_root == root or common_dir(parent_root) != shared:
+                continue
+            validate_project_checkout(db, parent)
+            effective = {key: value for key, value in parent.items()
+                         if key in PROJECT_FIELDS - {"id", "source_project"}}
+            effective.update(
+                repository=str(root), worktrees_allowed=False,
+                source_project={"id": parent["id"], "revision": parent["revision"]},
+            )
+            validate_project_checkout(db, effective)
+        except (ValueError, OSError, RuntimeError, CalledProcessError, KeyError, TypeError):
+            continue
+        candidates.append(effective)
+    if len(candidates) > 1:
+        return "PROFILE_AMBIGUOUS", {
+            "candidates": [profile["source_project"]["id"] for profile in candidates],
+        }
+    if not candidates:
+        return "WORKTREE_SOURCE_MISSING", {}
+    return "RESOLVED", {"resolution": "inherited", "profile": candidates[0]}
+
+
+def discover_project(repository="."):
+    """Inspect a local checkout and its effective project profile without saving it."""
+    root = None
+    try:
+        directory = Path(repository).resolve()
+        root = Path(os.fsdecode(_git(directory, "rev-parse", "--show-toplevel").removesuffix(b"\n"))).resolve()
+    except (ValueError, OSError, RuntimeError, CalledProcessError):
+        status, details = "NOT_GIT_CHECKOUT", {}
+    else:
+        try:
+            shared = common_dir(root)
+            git_dir = Path(os.fsdecode(
+                _git(root, "rev-parse", "--absolute-git-dir").removesuffix(b"\n")
+            )).resolve()
+            linked = git_dir != shared
+        except (ValueError, OSError, RuntimeError, CalledProcessError):
+            status, details = "CHECKOUT_INVALID", {}
+        else:
+            try:
+                file = profile_home() / "local-tasks.sqlite3"
+                try:
+                    file.stat()
+                except FileNotFoundError:
+                    status = "WORKTREE_SOURCE_MISSING" if linked else "PROFILE_MISSING"
+                    details = {}
+                else:
+                    with database() as db:
+                        if not db.in_transaction:
+                            db.execute("BEGIN")
+                        status, details = _discover_registered(db, root, shared, linked)
+            except (ValueError, OSError, sqlite3.Error, KeyError, TypeError, AttributeError):
+                status, details = "REGISTRY_ERROR", {}
+
+    next_actions = {
+        "NOT_GIT_CHECKOUT": "choose_git_checkout",
+        "CHECKOUT_INVALID": "inspect_git_checkout",
+        "PROFILE_MISSING": "local-project register <profile.json>",
+        "PROFILE_AMBIGUOUS": "select_project_id",
+        "WORKTREE_SOURCE_MISSING": "inspect_worktree_source",
+        "PROFILE_INVALID": "local-project register <profile.json> --revision <revision>",
+        "REGISTRY_ERROR": "inspect_private_registry",
+    }
+    return {
+        "schema_version": 1,
+        "status": status,
+        "checkout_root": str(root) if root is not None else None,
+        "next_action": ("select_project_id" if details.get("resolution") == "exact"
+                        else next_actions.get(status, "resolve_authorized_worktree")),
+        **details,
+    }
 
 
 def resolve_project(repository):
@@ -218,35 +341,35 @@ def resolve_project(repository):
             try:
                 validate_project_checkout(db, project)
                 return project
-            except (ValueError, OSError):
+            except (ValueError, OSError, RuntimeError, CalledProcessError, KeyError, TypeError) as error:
                 if not project.get("source_project"):
                     raise
-            candidates = [load_project(db, project["source_project"]["id"])]
-        else:
-            shared = common_dir(root)
-            candidates = []
-            for project in profiles:
-                if project.get("source_project") or not project.get("worktrees_allowed"):
-                    continue
-                try:
-                    validate_project_checkout(db, project)
-                    if common_dir(Path(project["repository"])) == shared:
-                        candidates.append(project)
-                except (ValueError, OSError):
-                    continue
+                raise ValueError("The inherited profile is invalid. Explicitly re-register it.") from error
+        shared = common_dir(root)
+        candidates = []
+        for project in profiles:
+            if project.get("source_project") or not project.get("worktrees_allowed"):
+                continue
+            try:
+                validate_project_checkout(db, project)
+                if common_dir(Path(project["repository"])) == shared:
+                    candidates.append(project)
+            except (ValueError, OSError):
+                continue
         if len(candidates) != 1 or not candidates[0].get("worktrees_allowed"):
             raise ValueError("Linked worktree needs exactly one authorized source project")
         parent = candidates[0]
     values = {key: value for key, value in parent.items() if key in PROJECT_FIELDS}
     suffix = hashlib.sha256(str(root).encode("utf-8")).hexdigest()[:12]
-    child_id = exact[0]["id"] if exact else parent["id"][:60] + "-wt-" + suffix
+    child_id = parent["id"][:60] + "-wt-" + suffix
     values.update(id=child_id, repository=str(root), name=parent.get("name", parent["id"])[:120] + " (worktree)",
                   worktrees_allowed=False, source_project={"id": parent["id"], "revision": parent["revision"]})
-    return register_project(values, exact[0]["revision"] if exact else "empty", retain_check_pins=True)
+    return register_project(values, "empty", retain_check_pins=True)
 
 
-def prepare_task(values, *, request_id=None, panel_input=None):
-    if not isinstance(values, dict) or not TASK_FIELDS - {"allow_extra_usage"} <= set(values) <= TASK_FIELDS:
+def validate_task_intent(values, *, checkout=False):
+    fields = TASK_FIELDS - {"project_id"} if checkout else TASK_FIELDS
+    if not isinstance(values, dict) or not fields - {"allow_extra_usage"} <= set(values) <= fields:
         raise ValueError("Expected the local task contract fields")
     title = values["title"]
     if not isinstance(title, str) or not 1 <= len(title.strip()) <= 200 or values["mode"] not in ("read", "write"):
@@ -257,19 +380,36 @@ def prepare_task(values, *, request_id=None, panel_input=None):
     extra = values.get("allow_extra_usage", False)
     if type(extra) is not bool:
         raise ValueError("Extra Usage permission must be boolean")
-    intent = {"project_id": identifier(values["project_id"]), "title": title.strip(), "mode": values["mode"],
-              "allowed_paths": paths, "allow_extra_usage": extra}
+    return {"title": title.strip(), "mode": values["mode"],
+            "allowed_paths": paths, "allow_extra_usage": extra}
+
+
+def prepare_task(values, *, request_id=None, panel_input=None, expected_project=None):
+    intent = validate_task_intent(values)
+    intent["project_id"] = identifier(values["project_id"])
+    paths = intent["allowed_paths"]
+    extra = intent["allow_extra_usage"]
     if request_id is not None:
         identifier(request_id)
     with database(write=True) as db:
+        if expected_project is not None:
+            expected_root, expected_revision = expected_project
+            project = load_project(db, intent["project_id"])
+            if (Path(project["repository"]) != Path(expected_root)
+                    or project["revision"] != expected_revision):
+                raise ValueError("The registered checkout or project revision changed")
         row = db.execute("SELECT record FROM tasks WHERE request_id = ?", (request_id,)).fetchone()
         if row:
             existing = json.loads(row[0])
             if (any(existing["contract"][key] != value for key, value in intent.items())
-                    or existing.get("panel_input") != panel_input):
+                    or existing.get("panel_input") != panel_input
+                    or expected_project is not None and (
+                        Path(existing["contract"]["repository"]) != Path(expected_root)
+                        or existing["contract"]["project_revision"] != expected_revision)):
                 raise ValueError("Request ID is already bound to another task contract")
             return existing
-        project = load_project(db, intent["project_id"])
+        if expected_project is None:
+            project = load_project(db, intent["project_id"])
         root = Path(project["repository"])
         if extra and not project["extra_usage_allowed"]:
             raise ValueError("Project does not authorize Extra Usage")

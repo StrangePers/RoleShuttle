@@ -613,6 +613,107 @@ let localTask;
 let localFingerprint;
 let localBusy = false;
 
+const registrationForm = localField("registration-form");
+const registrationFields = registrationForm.elements;
+const registrationConsent = localField("registration-consent");
+const registrationConfirm = localField("registration-confirm");
+const registrationCancel = localField("registration-cancel");
+const registrationSummary = localField("registration-summary");
+const registrationStatus = localField("registration-status");
+let registrationVersion = 0;
+let registrationPreviewId = null;
+
+function invalidateRegistrationPreview() {
+    registrationVersion += 1;
+    registrationPreviewId = null;
+    registrationSummary.hidden = true;
+    registrationSummary.textContent = "";
+    registrationStatus.textContent = "";
+    registrationConsent.checked = false;
+    registrationConsent.disabled = true;
+    registrationConfirm.disabled = true;
+}
+
+registrationForm.addEventListener("input", event => {
+    if (event.target === registrationConsent) {
+        registrationConfirm.disabled = !registrationPreviewId || !registrationConsent.checked;
+        return;
+    }
+    invalidateRegistrationPreview();
+});
+
+registrationCancel.addEventListener("click", () => {
+    registrationForm.reset();
+    invalidateRegistrationPreview();
+});
+
+registrationForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    invalidateRegistrationPreview();
+    const version = registrationVersion;
+    const automaticCloud = [];
+    if (registrationFields.codex.checked) automaticCloud.push("codex");
+    if (registrationFields.opencodeGo.checked) automaticCloud.push("opencode_go");
+    registrationStatus.textContent = "Preparing project preview…";
+    try {
+        const payload = {
+            path: registrationFields.path.value,
+            id: registrationFields.projectId.value,
+        };
+        const paths = registrationFields.allowedPaths.value.split("\n").map(path => path.trim()).filter(Boolean);
+        if (paths.length) payload.allowed_paths = paths;
+        if (registrationFields.worktreesAllowed.checked) payload.worktrees_allowed = true;
+        if (registrationFields.sharedMacAllowed.checked) payload.shared_mac_allowed = true;
+        if (registrationFields.externalCodeAllowed.checked) payload.external_code_allowed = true;
+        if (automaticCloud.length) payload.automatic_cloud = automaticCloud;
+        const {preview_id, project} = await request(payload, "/api/local/project-preview");
+        if (version !== registrationVersion) return;
+        const onOff = allowed => allowed ? "On" : "Off";
+        registrationSummary.textContent = [
+            `Git root: ${project.repository}`,
+            `Project ID: ${project.id}`,
+            ...(project.source_project ? [`Parent project: ${project.source_project.id}`] : []),
+            `Allowed write paths: ${project.allowed_paths.join(", ") || "None"}`,
+            `Linked worktrees: ${onOff(project.worktrees_allowed)}`,
+            `Shared Mac: ${onOff(project.shared_mac_allowed)}`,
+            `External code access: ${onOff(project.external_code_allowed)}`,
+            `Automatic cloud providers: ${project.automatic_cloud.join(", ") || "None"}`,
+            `Extra Usage allowed: ${onOff(project.extra_usage_allowed)}`,
+            `Extra Usage by default: ${onOff(project.extra_usage_default)}`,
+        ].join("\n");
+        registrationSummary.hidden = false;
+        registrationPreviewId = preview_id;
+        registrationConsent.disabled = false;
+        registrationStatus.textContent = "Review the preview, then approve it to register the project.";
+    } catch (error) {
+        if (version === registrationVersion) registrationStatus.textContent = error.message;
+    }
+});
+
+registrationConfirm.addEventListener("click", async () => {
+    if (!registrationPreviewId || !registrationConsent.checked) return;
+    const previewId = registrationPreviewId;
+    const fieldset = registrationForm.querySelector("fieldset");
+    invalidateRegistrationPreview();
+    fieldset.disabled = true;
+    registrationCancel.disabled = true;
+    registrationStatus.textContent = "Registering project…";
+    try {
+        const project = await request({preview_id: previewId, confirmed: true}, "/api/local/project-confirm");
+        registrationStatus.textContent = `Registered ${project.id}. Select it under New task.`;
+        try {
+            await loadLocalCatalog();
+        } catch (error) {
+            registrationStatus.textContent = `Registered ${project.id}. Refresh the page to reload the project list. ${error.message}`;
+        }
+    } catch (error) {
+        registrationStatus.textContent = `${error.message} Create a new preview to try again.`;
+    } finally {
+        fieldset.disabled = false;
+        registrationCancel.disabled = false;
+    }
+});
+
 function displayLocalTask(task) {
     if (localTask?.task_id !== task.task_id || task.go_closure) {
         localField("go-close-comment").value = "";

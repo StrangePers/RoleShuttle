@@ -8,10 +8,13 @@ import subprocess
 import sys
 import sqlite3
 
+from .agent_registration import prepare_for_checkout
 from .codex_stage import ROLE_TASKS, codex_stage
 from .companion import LABELS, follow, publish, publish_sources, report_snapshot, runtime_task_id
 from .local import MAX_INPUT, MAX_OUTPUT_TOKENS, ROLE_PROMPTS, consult, delegate
-from .local_tasks import prepare_task, register_project, resolve_project, show_project, show_task
+from .local_tasks import (
+    discover_project, prepare_task, register_project, resolve_project, show_project, show_task,
+)
 from .local_acceptance import accept_task, check_task, reconcile_checks
 from .local_execution import execute_patch, inspect_result, reconcile_patch
 from .local_model import answer_question, cancel_model, propose_patch, revise_patch
@@ -119,6 +122,8 @@ def main(argv=None):
     project_show.add_argument("id")
     resolve = project_actions.add_parser("resolve", help="Resolve or inherit an authorized linked worktree")
     resolve.add_argument("repository", type=Path)
+    discover = project_actions.add_parser("discover", help="Inspect a Git checkout's effective project profile")
+    discover.add_argument("path", nargs="?", type=Path, default=Path("."))
     for name in ("preview-console", "import-console"):
         project_import = project_actions.add_parser(name, help="Migrate private profiles with Extra Usage off")
         project_import.add_argument("config", type=Path)
@@ -130,6 +135,7 @@ def main(argv=None):
     prepare = task_actions.add_parser("prepare")
     prepare.add_argument("contract", type=Path)
     prepare.add_argument("--request-id")
+    prepare.add_argument("--checkout", type=Path)
     task_show = task_actions.add_parser("show")
     task_show.add_argument("id")
     worktree = task_actions.add_parser("worktree", help="Create a detached worktree at the pinned commit")
@@ -249,6 +255,8 @@ def main(argv=None):
                 result = register_project(json.loads(args.profile.read_text(encoding="utf-8-sig")), args.revision)
             elif args.project_action == "resolve":
                 result = resolve_project(args.repository)
+            elif args.project_action == "discover":
+                result = discover_project(args.path)
             elif args.project_action == "audit":
                 result = project_readiness()
             elif args.project_action == "preview-console":
@@ -261,8 +269,11 @@ def main(argv=None):
             return 0
         if args.action == "local-task":
             if args.local_task_action == "prepare":
-                result = prepare_task(json.loads(args.contract.read_text(encoding="utf-8-sig")),
-                                      request_id=args.request_id)
+                contract = json.loads(args.contract.read_text(encoding="utf-8-sig"))
+                if args.checkout is None:
+                    result = prepare_task(contract, request_id=args.request_id)
+                else:
+                    result = prepare_for_checkout(contract, args.checkout, request_id=args.request_id)
             elif args.local_task_action == "worktree":
                 result = create_worktree(args.id)
             elif args.local_task_action == "reconcile-worktree":
