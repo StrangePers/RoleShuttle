@@ -23,6 +23,12 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
+def configure_key(key):
+    global _key
+    GoStage(key)
+    _key = key
+
+
 def configured():
     return bool(_key)
 
@@ -106,7 +112,7 @@ def parse_stream(response, model, on_active, *, deadline=None, on_terminal=None)
 
 class GoStage:
     def __init__(self, key):
-        if not key or not re.fullmatch(r"[!-~]+", key):
+        if not isinstance(key, str) or not re.fullmatch(r"[!-~]+", key):
             raise ValueError("Configure an OpenCode Go credential for RoleShuttle")
         self.key = key
         self.authorized_at = None
