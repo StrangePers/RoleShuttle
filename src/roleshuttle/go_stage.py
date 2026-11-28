@@ -14,7 +14,8 @@ KEY_ENV = "ROLESHUTTLE_OPENCODE_GO_KEY"
 USAGE = "https://opencode.ai/inference/go/v1/usage"
 STATUS = "https://opencode.ai/console/api/go/status"
 COMPLETIONS = "https://opencode.ai/inference/go/openai/v1/chat/completions"
-MAX_RESPONSE = 512 * 1024
+MAX_RESPONSE = 4 * 1024 * 1024
+DEFAULT_TASK_TIMEOUT = 150
 _key = os.environ.pop(KEY_ENV, None)
 
 
@@ -37,6 +38,17 @@ def configured_stage():
     return GoStage(_key)
 
 
+class GoStreamLimitError(ValueError):
+    messages = {
+        "size_limit": "OpenCode Go stream exceeded the 4 MiB response size limit",
+        "timeout": "OpenCode Go stream timed out",
+    }
+
+    def __init__(self, reason):
+        super().__init__(self.messages[reason])
+        self.reason = reason
+
+
 class GoClientDisconnected(ValueError):
     def __init__(self, response_id):
         super().__init__("Go connection closed locally; provider cancellation is unconfirmed")
@@ -46,24 +58,27 @@ class GoClientDisconnected(ValueError):
 def stream_events(response, deadline):
     remaining = MAX_RESPONSE
     data = []
-    while remaining > 0 and time.monotonic() < deadline:
+    while True:
+        if time.monotonic() >= deadline:
+            raise GoStreamLimitError("timeout")
         line = response.readline(remaining + 1)
+        if time.monotonic() >= deadline:
+            raise GoStreamLimitError("timeout")
         if not line:
             return
         remaining -= len(line)
         if remaining < 0:
-            break
+            raise GoStreamLimitError("size_limit")
         line = line.rstrip(b"\r\n")
         if line.startswith(b"data:"):
             data.append(line[5:].lstrip())
         elif not line and data:
             yield b"\n".join(data)
             data.clear()
-    raise ValueError("OpenCode Go stream exceeded its time or size limit")
 
 
 def parse_stream(response, model, on_active, *, deadline=None, on_terminal=None):
-    deadline = time.monotonic() + 60 if deadline is None else deadline
+    deadline = time.monotonic() + DEFAULT_TASK_TIMEOUT if deadline is None else deadline
     response_id, usage, finish = None, None, None
     active = False
     text = []
@@ -117,7 +132,7 @@ class GoStage:
         self.key = key
         self.authorized_at = None
         self.health_timeout = 10
-        self.task_timeout = 60
+        self.task_timeout = DEFAULT_TASK_TIMEOUT
         self.opener = build_opener(ProxyHandler({}), NoRedirect())
 
     def request(self, endpoint, body=None, session=None):
@@ -201,6 +216,9 @@ class GoStage:
         active, done, disconnected, terminal=Event(),Event(),Event(),Event()
         response_id=None
         result=None
+        limit_error = None
+        timed_out = Event()
+        watcher = None
 
         def publish(identity):
             nonlocal response_id
@@ -210,17 +228,24 @@ class GoStage:
 
         def watch(sock):
             while not done.wait(.15):
-                if terminal.is_set():
+                expired = time.monotonic() >= deadline
+                cancelled = not expired and not terminal.is_set() and active.is_set() and cancel_requested()
+                if not expired and not cancelled:
+                    continue
+                if done.is_set():
                     return
-                if active.is_set() and cancel_requested():
-                    if terminal.is_set() or done.is_set():
-                        return
-                    try:
-                        sock.shutdown(socket.SHUT_RDWR)
-                    except OSError:
-                        return
+                if expired:
+                    timed_out.set()
+                else:
+                    if terminal.is_set():
+                        continue
                     disconnected.set()
-                    return
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    if not expired:
+                        disconnected.clear()
+                return
 
         try:
             headers={"Authorization":"Bearer "+self.key,"Accept":"text/event-stream",
@@ -233,6 +258,7 @@ class GoStage:
             if sock is None:
                 raise ValueError("OpenCode Go connection was unavailable")
             watcher=Thread(target=watch,args=(sock,),daemon=True)
+            watcher.start()
             with connection.getresponse() as response:
                 log_id = response.getheader("x-opencode-log-id", "")
                 if on_request and re.fullmatch(
@@ -241,22 +267,33 @@ class GoStage:
                     on_request(log_id.lower())
                 if response.status!=200 or response.getheader("Content-Type","").split(";",1)[0]!="text/event-stream":
                     raise ValueError("OpenCode Go did not return a successful event stream")
-                watcher.start()
                 try:
                     result=parse_stream(response,model,publish,deadline=deadline,on_terminal=terminal.set)
+                except GoStreamLimitError as error:
+                    limit_error = error
+                except TimeoutError:
+                    limit_error = GoStreamLimitError("timeout")
                 except (OSError, HTTPException, ValueError):
                     pass
-                finally:
-                    done.set()
-                    watcher.join(timeout=5)
+        except TimeoutError:
+            raise GoStreamLimitError("timeout") from None
         except (OSError, HTTPException):
+            if timed_out.is_set():
+                raise GoStreamLimitError("timeout") from None
             raise ValueError("OpenCode Go stream could not be verified") from None
         finally:
+            done.set()
+            if watcher is not None:
+                watcher.join(timeout=5)
             connection.close()
         if result is not None:
             return result
         if disconnected.is_set():
             raise GoClientDisconnected(response_id)
+        if limit_error is not None:
+            raise limit_error
+        if timed_out.is_set():
+            raise GoStreamLimitError("timeout")
         raise ValueError("OpenCode Go stream ended without a verified result")
 
 

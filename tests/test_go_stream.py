@@ -2,7 +2,8 @@ import io
 import json
 import unittest
 
-from roleshuttle.go_stage import parse_stream
+from unittest.mock import Mock, patch
+from roleshuttle.go_stage import DEFAULT_TASK_TIMEOUT, MAX_RESPONSE, GoStage, GoStreamLimitError, parse_stream
 
 
 def event(**values):
@@ -22,6 +23,43 @@ class GoStreamTests(unittest.TestCase):
         self.assertEqual(signal,["go-123"])
         self.assertEqual(out["choices"][0]["message"]["content"],"part two")
         self.assertEqual(out["usage"],{"cost":0})
+
+    def test_four_mib_stream_boundary_preserves_terminal_result(self):
+        terminal = (event(model="fixture", choices=[{"finish_reason": "stop"}], usage={"cost": 0})
+                    + b"data: [DONE]\n\n")
+        self.assertEqual(MAX_RESPONSE, 4 * 1024 * 1024)
+        padding = b":" + b"x" * (MAX_RESPONSE - len(terminal) - 2) + b"\n"
+        result = parse_stream(io.BytesIO(padding + terminal), "fixture", lambda _: None)
+        self.assertEqual(result["usage"], {"cost": 0})
+
+    def test_transport_distinguishes_size_deadline_and_socket_timeout(self):
+        class Response(io.BytesIO):
+            status = 200
+
+            def getheader(self, name, default=None):
+                return "text/event-stream" if name == "Content-Type" else default
+
+        stage = GoStage("fixture-key")
+        self.assertEqual(DEFAULT_TASK_TIMEOUT, 150)
+        self.assertEqual(stage.task_timeout, 150)
+        connection = Mock()
+        with patch("roleshuttle.go_stage.HTTPSConnection", return_value=connection) as connect:
+            connection.getresponse.return_value = Response(b"x" * (MAX_RESPONSE + 1))
+            with self.assertRaisesRegex(GoStreamLimitError, "4 MiB") as size:
+                stage.stream_request({}, "s", "fixture", lambda _: None, lambda: False)
+            self.assertEqual(size.exception.reason, "size_limit")
+            connect.assert_called_once_with("opencode.ai", timeout=150)
+
+            connection.getresponse.return_value = Response()
+            with patch("roleshuttle.go_stage.time.monotonic", side_effect=[0, 150]):
+                with self.assertRaisesRegex(GoStreamLimitError, "timed out") as deadline:
+                    stage.stream_request({}, "s", "fixture", lambda _: None, lambda: False)
+            self.assertEqual(deadline.exception.reason, "timeout")
+
+            connection.getresponse.side_effect = TimeoutError
+            with self.assertRaisesRegex(GoStreamLimitError, "timed out") as socket_error:
+                stage.stream_request({}, "s", "fixture", lambda _: None, lambda: False)
+            self.assertEqual(socket_error.exception.reason, "timeout")
 
     def test_incomplete_stream_is_never_a_result(self):
         data=event(id="go-123",model="fixture",choices=[{"delta":{"content":"partial"}}])

@@ -202,7 +202,7 @@ def action(name, request):
             stage=go_stage.configured_stage()
             if advanced["revision"] != "empty":
                 stage.health_timeout=advanced["settings"]["timeouts"]["local_health_seconds"]
-                stage.task_timeout=advanced["settings"]["timeouts"]["task_default_seconds"]
+                stage.task_timeout=max(go_stage.DEFAULT_TASK_TIMEOUT, advanced["settings"]["timeouts"]["task_default_seconds"])
             stage.check_model(row["model"])
             stage.authorize()
             return stage
