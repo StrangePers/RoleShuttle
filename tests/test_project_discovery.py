@@ -1,5 +1,7 @@
 from http.client import HTTPConnection
 import json
+import os
+import sys
 from pathlib import Path
 import subprocess
 from tempfile import TemporaryDirectory
@@ -9,8 +11,11 @@ import unittest
 from unittest.mock import Mock, patch
 
 from roleshuttle.agent_registration import prepare_for_checkout
+from roleshuttle.local_acceptance import accept_task, check_task
+from roleshuttle.local_execution import execute_patch, inspect_result
 from roleshuttle.local_model import propose_patch
-from roleshuttle.local_tasks import database, discover_project, register_project, resolve_project
+from roleshuttle.local_panel import action
+from roleshuttle.local_tasks import database, discover_project, prepare_task, register_project, resolve_project, show_project
 from roleshuttle.local_worktrees import create_worktree
 from roleshuttle.project_registration import PREVIEW_TTL, ProjectRegistration
 from roleshuttle.settings_server import CheckoutServer, SettingsServer
@@ -59,6 +64,59 @@ class ProjectDiscoveryTests(unittest.TestCase):
             return
         with database() as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0], 0)
+
+    def check_setup_fixture(self):
+        self.enterContext(patch.dict(os.environ, {"ROLESHUTTLE_HOME": str(self.registry)}))
+        project = self.register()
+        task = prepare_task({**self.checkout_intent(), "project_id": project["id"]},
+                            panel_input={"prompt": "Test fixture"})
+        command = [sys.executable, "-I", "-B", "-c",
+                   "from pathlib import Path; assert Path('src/check.txt').read_text().strip() == 'verified'"]
+        request = {"task_id": task["task_id"], "revision": task["revision"], "confirmed": True,
+                   "checks": [{"id": "verify", "argv": command}]}
+        return project, task, request
+
+    def test_missing_checks_block_panel_launch_before_worktree_creation(self):
+        _, task, _ = self.check_setup_fixture()
+        request = {"task_id": task["task_id"]}
+        self.assertEqual(action("check-setup-status", request),
+                         {"requires_setup": True, "can_configure": True})
+        with patch("roleshuttle.local_panel.create_worktree") as create:
+            with self.assertRaisesRegex(ValueError, "No checks are registered"):
+                action("launch", request)
+        create.assert_not_called()
+
+    def test_task_checks_are_pinned_and_allow_acceptance_without_new_task(self):
+        project, task, request = self.check_setup_fixture()
+        task_id = task["task_id"]
+        configured = action("configure-checks", request)
+        self.assertEqual(configured["task_id"], task_id)
+        self.assertEqual(configured["contract"], task["contract"])
+        self.assertEqual(show_project(project["id"]), project)
+        self.assertRegex(configured["task_checks"][0]["executable_sha256"], r"^[0-9a-f]{64}$")
+        self.assertEqual(action("check-setup-status", {"task_id": task_id}),
+                         {"requires_setup": False, "can_configure": False})
+        with self.assertRaisesRegex(ValueError, "Task revision changed"):
+            action("configure-checks", request)
+        create_worktree(task_id)
+        diff = self.directory / "fixture.diff"
+        diff.write_bytes(
+            b"diff --git a/src/check.txt b/src/check.txt\nnew file mode 100644\n"
+            b"--- /dev/null\n+++ b/src/check.txt\n@@ -0,0 +1 @@\n+verified\n"
+        )
+        execute_patch(task_id, diff)
+        fingerprint = inspect_result(task_id)["fingerprint"]
+        checked = check_task(task_id, fingerprint)
+        self.assertTrue(checked["check_receipt"]["passed"])
+        self.assertEqual(accept_task(task_id, fingerprint)["status"], "accepted")
+
+    def test_task_checks_require_consent_and_current_project_revision(self):
+        project, _, request = self.check_setup_fixture()
+        with self.assertRaisesRegex(ValueError, "Explicitly confirm"):
+            action("configure-checks", {**request, "confirmed": False})
+        self.register(revision=project["revision"], worktrees_allowed=False)
+        with self.assertRaisesRegex(ValueError, "Project revision changed"):
+            action("configure-checks", request)
 
     def test_linked_registration_confirms_exact_inherited_preview(self):
         parent = self.register(shared_mac_allowed=True, external_code_allowed=True,

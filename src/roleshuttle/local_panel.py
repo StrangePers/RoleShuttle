@@ -8,6 +8,7 @@ import time
 from . import advanced_settings, go_stage, launch_routing
 from .codex_stage import native_client, subscription_limits
 from .local_acceptance import accept_task, check_baseline, check_task, read_check_log
+from .local_check_setup import check_setup_status, configure_checks
 from .local_execution import execute_patch, inspect_result
 from .local_model import answer_question, cancel_model, close_go, codex_route, propose_patch, reconcile_go, revise_patch
 from .local_tasks import database, load_project, prepare_task, show_task
@@ -19,7 +20,7 @@ from .recommended import project_route_reasons
 from .project_import import target_projects
 from .r28_archive import archive_card, list_archive
 
-ACTIONS = {"prepare", "prepare-baseline", "launch", "status", "apply", "diff", "check", "check-baseline",
+ACTIONS = {"check-setup-status", "configure-checks", "prepare", "prepare-baseline", "launch", "status", "apply", "diff", "check", "check-baseline",
            "check-log", "accept", "revise", "answer", "cancel", "reconcile-go", "close-go", "archive-list", "archive-card"}
 
 
@@ -135,6 +136,10 @@ def action(name, request):
                              "mode": "read", "allowed_paths": [], "allow_extra_usage": False},
                             request_id=request.get("request_id"))
     task_id = request.get("task_id")
+    if name == "check-setup-status":
+        return check_setup_status(task_id)
+    if name == "configure-checks":
+        return configure_checks(request)
     if name == "check-log":
         return read_check_log(task_id, request.get("receipt_id"), request.get("check_id"))
     task = show_task(task_id)
@@ -164,6 +169,9 @@ def action(name, request):
     panel = task.get("panel_input")
     if not panel:
         raise ValueError("This task has no operator-approved panel input")
+    if name == "launch" and task["phase"] in {"prepared", "worktree_ready"}:
+        if check_setup_status(task_id)["requires_setup"]:
+            raise ValueError("No checks are registered. Add task checks before launching.")
     if name == "launch" and task["phase"] == "prepared":
         create_worktree(task_id)
     choice = None
