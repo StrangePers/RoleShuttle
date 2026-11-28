@@ -5,6 +5,7 @@ import re
 from uuid import uuid4
 
 from .check_runner import check_directory, executable_hash, run_check
+from .local_check_setup import effective_checks
 from .local_execution import _review
 from .local_tasks import database, identifier, load_project, load_task, show_task, stamp, update_task
 from .local_worktrees import _operation_lock, verify_task_worktree
@@ -16,7 +17,7 @@ def current_checks(db, task, target):
     project = load_project(db, contract["project_id"])
     if project["revision"] != contract["project_revision"]:
         raise ValueError("Project revision changed. Prepare a new task.")
-    checks = project.get("checks", [])
+    checks = effective_checks(task, project)
     if not checks:
         raise ValueError("Register project checks before preparing a task for acceptance")
     for check in checks:

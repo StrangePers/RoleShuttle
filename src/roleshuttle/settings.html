@@ -75,6 +75,26 @@
       <label id="local-go-close-label" hidden>Closure comment <textarea id="local-go-close-comment" rows="3" maxlength="4096" required></textarea></label>
       <label id="local-message-label" hidden>Answer or revision comment <textarea id="local-message" rows="3" maxlength="4096"></textarea></label>
       <label id="local-proof-label" hidden>Project acceptance evidence JSON <textarea id="local-proof" rows="3"></textarea></label>
+      <p id="local-check-setup-status" role="status" hidden></p>
+      <form id="local-check-setup" hidden>
+        <fieldset>
+          <legend>Checks for this task</legend>
+          <p>Enter an absolute executable path and one argument per line. Commands run from the task worktree when you choose Run checks.</p>
+          <div id="local-check-commands"></div>
+          <button id="local-add-check" type="button">Add another command</button>
+          <label><input id="local-check-consent" type="checkbox" required> I authorize these commands for this task</label>
+          <button type="submit">Save task checks</button>
+        </fieldset>
+      </form>
+      <template id="local-check-command">
+        <fieldset>
+          <legend>Check command</legend>
+          <label>Check ID <input name="id" required maxlength="80"></label>
+          <label>Executable <input name="executable" required maxlength="4000"></label>
+          <label>Arguments <textarea name="args" rows="3"></textarea></label>
+          <button type="button" data-remove-check>Remove command</button>
+        </fieldset>
+      </template>
       <div class="actions" id="local-actions">
         <button type="button" data-action="launch" hidden>Launch on Codex</button>
         <button type="button" data-action="status">Refresh task</button>

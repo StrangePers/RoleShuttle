@@ -714,6 +714,72 @@ registrationConfirm.addEventListener("click", async () => {
     }
 });
 
+const checkSetupForm = localField("check-setup");
+const checkCommands = localField("check-commands");
+const checkSetupStatus = localField("check-setup-status");
+let checkSetup;
+
+function addTaskCheck() {
+    checkCommands.append(localField("check-command").content.cloneNode(true));
+}
+
+localField("add-check").addEventListener("click", addTaskCheck);
+checkCommands.addEventListener("click", event => {
+    if (event.target.matches("[data-remove-check]") && checkCommands.children.length > 1) {
+        event.target.closest("fieldset").remove();
+    }
+});
+
+async function loadTaskCheckSetup(task) {
+    checkSetup = undefined;
+    checkSetupForm.hidden = checkSetupStatus.hidden = true;
+    if (task.contract.mode !== "write" || task.model_operation ||
+        !["prepared", "worktree_ready"].includes(task.phase)) return;
+    checkSetupStatus.hidden = false;
+    checkSetupStatus.textContent = "Checking configured commands…";
+    try {
+        const result = await request({task_id: task.task_id}, "/api/local/check-setup-status");
+        if (localTask !== task) return;
+        checkSetup = result;
+        checkSetupStatus.hidden = !result.requires_setup;
+        checkSetupStatus.textContent = result.requires_setup ? "No checks are registered. Add checks before launching." : "";
+        checkSetupForm.hidden = !result.can_configure;
+        if (result.can_configure) {
+            checkCommands.replaceChildren();
+            localField("check-consent").checked = false;
+            addTaskCheck();
+        }
+    } catch (error) {
+        if (localTask === task) checkSetupStatus.textContent = error.message;
+    }
+    if (localTask === task) refreshLocalControls();
+}
+
+checkSetupForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    const task = localTask;
+    if (!checkSetup?.can_configure || localBusy || !localField("check-consent").checked) return;
+    const checks = Array.from(checkCommands.children, row => ({
+        id: row.querySelector('[name="id"]').value.trim(),
+        argv: [
+            row.querySelector('[name="executable"]').value.trim(),
+            ...row.querySelector('[name="args"]').value.split("\n").filter(arg => arg.length),
+        ],
+    }));
+    localBusy = true;
+    refreshLocalControls();
+    try {
+        const updated = await request({task_id: task.task_id, revision: task.revision, checks, confirmed: true},
+                                      "/api/local/configure-checks");
+        if (localTask?.task_id === task.task_id) displayLocalTask(updated);
+    } catch (error) {
+        if (localTask === task) checkSetupStatus.textContent = error.message;
+    } finally {
+        localBusy = false;
+        refreshLocalControls();
+    }
+});
+
 function displayLocalTask(task) {
     if (localTask?.task_id !== task.task_id || task.go_closure) {
         localField("go-close-comment").value = "";
@@ -724,7 +790,9 @@ function displayLocalTask(task) {
         localField("check-log").hidden = true;
         localField("check-log").textContent = "";
     }
+    const checkSetupChanged = localTask?.revision !== task.revision || localTask?.task_id !== task.task_id;
     localTask = task;
+    if (checkSetupChanged || !checkSetup) loadTaskCheckSetup(task);
     localField("controls").hidden = false;
     const base = task.contract.mode === "read" ? " · Base " + task.contract.base_revision.slice(0, 7) : "";
     localField("id").textContent = task.contract.title + " · " + task.task_id + base;
@@ -782,6 +850,7 @@ function displayLocalTask(task) {
 
 function refreshLocalControls() {
     if (!localTask) return;
+    checkSetupForm.querySelector("fieldset").disabled = localBusy;
     const {phase, status, contract, panel_input, model_operation} = localTask;
     const review = phase === "patch_applied";
     const awaitingGoReview = phase === "model_unsettled" && status === "needs_review" &&
@@ -807,7 +876,8 @@ function refreshLocalControls() {
     };
     for (const button of localField("actions").querySelectorAll("button")) {
         button.hidden = !visible[button.dataset.action];
-        button.disabled = localBusy && !["status", "cancel"].includes(button.dataset.action);
+        button.disabled = (localBusy && !["status", "cancel"].includes(button.dataset.action))
+            || (button.dataset.action === "launch" && checkSetup?.requires_setup !== false);
     }
 }
 
