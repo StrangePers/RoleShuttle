@@ -11,6 +11,7 @@ import time
 import unittest
 from unittest.mock import patch
 
+from roleshuttle.go_stage import GoStreamLimitError
 from roleshuttle.local_acceptance import accept_task, check_task, reconcile_checks
 from roleshuttle.local_execution import execute_patch, inspect_result, reconcile_patch
 from roleshuttle.local_panel import action as panel_action
@@ -77,6 +78,26 @@ class LocalExecutionTests(unittest.TestCase):
         for pool in item["availability"]["pools"].values():
             pool["observed_at"] = observed
         return task, item
+
+    def test_go_stream_limit_reason_is_saved_on_the_task(self):
+        register_project({**self.project, "external_code_allowed": True, "automatic_cloud": ["opencode_go"]},
+                         self.project_revision)
+        assignment = {"provider": "opencode_go", "model_id": "fixture"}
+        for reason in ("size_limit", "timeout"):
+            with self.subTest(reason=reason):
+                task = prepare_task(self.contract, panel_input={"assignment": assignment})
+                task_id = task["task_id"]
+                create_worktree(task_id)
+                error = GoStreamLimitError(reason)
+                with patch("roleshuttle.local_model.configured_stage") as stage:
+                    stage.return_value.complete.side_effect = error
+                    with self.assertRaisesRegex(ValueError, str(error)):
+                        propose_patch(task_id, "Approved fixture", None)
+                saved = show_task(task_id)
+                self.assertEqual(saved["phase"], "model_unsettled")
+                self.assertFalse(saved["active"])
+                self.assertEqual(saved["model_operation"]["stream_failure"],
+                                 {"reason": reason, "message": str(error)})
 
     def test_panel_baseline_check_uses_pinned_clean_worktree(self):
         check = {"id": "python-unit", "argv": [sys.executable, "-I", "-S", "-c",

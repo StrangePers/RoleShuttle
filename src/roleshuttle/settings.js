@@ -799,6 +799,7 @@ function displayLocalTask(task) {
     localField("status").textContent = "Task status: " + task.status +
         (task.check_receipt?.passed ? " · Checks passed" : "");
     const operation=task.model_operation;
+    if (operation?.stream_failure) localField("status").textContent += " · " + operation.stream_failure.message;
     if (operation?.interruption?.local_connection_closed) {
         localField("status").textContent += " · Go connection closed locally. Provider cancellation is unconfirmed.";
     }

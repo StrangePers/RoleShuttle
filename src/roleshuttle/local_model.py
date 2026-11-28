@@ -10,7 +10,7 @@ from uuid import uuid4
 from . import advanced_settings
 from .codex_cancel import interruption_confirmed
 from .codex_stage import codex_stage
-from .go_stage import GoClientDisconnected, configured, configured_stage
+from .go_stage import DEFAULT_TASK_TIMEOUT, GoClientDisconnected, GoStreamLimitError, configured, configured_stage
 from .local import MAX_INPUT
 from .local_acceptance import approved_result
 from .local_execution import _review, validate_patch
@@ -175,7 +175,7 @@ def request_patch(task_id, prompt, snapshot, *, question_id=None, answer=None, c
                 stage = admitted if choice else configured_stage()
                 if advanced["revision"] != "empty":
                     stage.health_timeout=advanced["settings"]["timeouts"]["local_health_seconds"]
-                    stage.task_timeout=advanced["settings"]["timeouts"]["task_default_seconds"]
+                    stage.task_timeout=max(DEFAULT_TASK_TIMEOUT, advanced["settings"]["timeouts"]["task_default_seconds"])
             else:
                 stage = admitted
             decision = {"assigned_model": selected["model_id"], "effort": None, "selected_route": provider}
@@ -256,6 +256,10 @@ def request_patch(task_id, prompt, snapshot, *, question_id=None, answer=None, c
             return finish_request(task,{**operation,"interruption":{
                 "response_id":error.response_id,"local_connection_closed":True,
                 "provider_acknowledged":False}}, "unsettled","needs_review","model_unsettled")
+        except GoStreamLimitError as error:
+            finish_request(task, {**operation, "stream_failure": {"reason": error.reason, "message": str(error)}},
+                           "unsettled", "needs_review", "model_unsettled")
+            raise ValueError(f"Model proposal stopped. No automatic retry. {error}") from error
         except (KeyError, TypeError, ValueError, OSError, RuntimeError) as error:
             finish_request(task, operation, "unsettled", "needs_review", "model_unsettled")
             raise ValueError(f"Model proposal stopped. No automatic retry. {error}") from error
